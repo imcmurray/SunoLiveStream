@@ -82,6 +82,12 @@
   let npImg = "";            // current cover url (restart the drift only on track change)
   let npShare = "";          // current Suno share url (rebuild the QR only on track change)
   let countdownCalls = [];   // the running "going live" countdown's scheduled ticks
+  // up-next queue strip: full list + which page is showing, so a long queue
+  // (e.g. 20 songs) cycles through pages instead of silently hiding everything
+  let qItems = [];           // full waiting queue [{title,image,who,avatar}]
+  let qStart = 0;            // index of the first pill in the visible window
+  let qSig = "";             // signature of qItems — reset the window only when it changes
+  let qCycleTimer = null;    // the page-rotation timer
 
   // ---- full-stage cover backdrop: crossfade between songs, slow drift + a
   // gentle focus pull (unblur → reblur) for life. Two layers crossfade. The
@@ -163,6 +169,50 @@
     // scalable SVG (viewBox only) → CSS sizes it; margin in modules (quiet zone)
     holder.innerHTML = q.createSvgTag({ cellSize: 6, margin: 1, scalable: true });
     wrap.dataset.show = "true";
+  }
+
+  // ---- up-next queue strip --------------------------------------------------
+  const Q_WIN = 4;     // pills visible at once
+  const Q_CYCLE = 6;   // seconds between page rotations (only if the queue > Q_WIN)
+  const safeImg = (u) => (typeof u === "string" && /^https:\/\/[^\s"')<>]+$/i.test(u) ? u : "");
+  // render the current window of pills, each tagged with its TRUE position in line
+  function renderQueueWindow() {
+    const list = $("#queue .q-list");
+    if (!list) return;
+    const n = qItems.length;
+    list.innerHTML = "";
+    if (!n) return;
+    const win = Math.min(Q_WIN, n);
+    for (let k = 0; k < win; k++) {
+      const idx = (qStart + k) % n;
+      const it = qItems[idx] || {};
+      const item = document.createElement("div"); item.className = "q-item";
+      const cover = safeImg(it.image);
+      if (cover) { const c = document.createElement("span"); c.className = "q-cover"; c.style.backgroundImage = `url("${cover}")`; item.appendChild(c); }
+      const avWrap = document.createElement("div"); avWrap.className = "q-av-wrap";
+      avWrap.appendChild(avatarEl(it.who, it.avatar, 34));
+      const pos = document.createElement("span"); pos.className = "q-pos"; pos.textContent = String(idx + 1); // true line position
+      avWrap.appendChild(pos);
+      const col = document.createElement("div"); col.className = "q-col";
+      const title = document.createElement("div"); title.className = "q-title"; title.textContent = clean(it.title, 30) || "—";
+      const who = document.createElement("div"); who.className = "q-who"; who.textContent = clean(it.who, 18) || "viewer";
+      col.append(title, who);
+      item.append(avWrap, col);
+      if (gsap) gsap.fromTo(item, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", delay: k * 0.05 });
+      list.appendChild(item);
+    }
+  }
+  // rotate the visible page every Q_CYCLE seconds when the queue is longer than
+  // one window — so a 20-song queue scrolls through all of them, judder-free
+  function startQueueCycle() {
+    if (qCycleTimer) { qCycleTimer.kill ? qCycleTimer.kill() : clearTimeout(qCycleTimer); qCycleTimer = null; }
+    if (qItems.length <= Q_WIN) return;
+    const tick = () => {
+      qStart = (qStart + Q_WIN) % qItems.length;
+      renderQueueWindow();
+      qCycleTimer = gsap ? gsap.delayedCall(Q_CYCLE, tick) : setTimeout(tick, Q_CYCLE * 1000);
+    };
+    qCycleTimer = gsap ? gsap.delayedCall(Q_CYCLE, tick) : setTimeout(tick, Q_CYCLE * 1000);
   }
   function voteShow(on) {
     const el = $("#vote");
@@ -597,7 +647,7 @@
     host.appendChild(card);
 
     if (gsap) {
-      gsap.fromTo(card, { y: 80, opacity: 0, scale: 0.9 },
+      gsap.fromTo(card, { y: 34, opacity: 0, scale: 0.92 },
         { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.7)" });
       // countdown: light one dot at a time across the hold (discrete pops, no
       // continuous motion → nothing to judder)
@@ -608,7 +658,7 @@
           gsap.fromTo(d, { scale: 1 }, { scale: 1.35, duration: 0.4, ease: "back.out(4)" });
         });
       });
-      gsap.to(card, { y: 120, opacity: 0, rotateZ: 3, duration: 0.55, delay: 0.5 + TICK_HOLD, ease: "power2.in",
+      gsap.to(card, { y: -34, opacity: 0, scale: 0.96, duration: 0.5, delay: 0.5 + TICK_HOLD, ease: "power2.in",
         onComplete: () => card.remove() });
       tickTimer = gsap.delayedCall(0.5 + TICK_HOLD + 0.45, showTickCard);
     } else {
@@ -915,7 +965,7 @@
       }
 
       const cards = wrap.querySelectorAll(".shoutout");
-      for (let i = 8; i < cards.length; i++) cards[i].remove();
+      for (let i = 5; i < cards.length; i++) cards[i].remove();
       return { ok: true, tier };
     },
 
@@ -1133,9 +1183,6 @@
       set(".np-artist", artist);
       set(".np-by", who ? "  ·  req by " + who : "");
       set(".np-like-count", String(likes));
-      set(".np-queue-count", String(queue));
-      const q = el.querySelector(".np-queue");
-      if (q) q.dataset.show = queue > 0 ? "true" : "false";
       const first = el.dataset.show !== "true";
       el.dataset.show = "true";
       el.classList.add("playing");
@@ -1163,42 +1210,32 @@
     },
 
     // ---- request queue strip ------------------------------------------------
-    // p.items: [{ title, artist, who, avatar }] in line order; p.count = total
-    // waiting (may exceed what's shown). Empty → hide the strip. Each item shows
-    // the requester's avatar + a position badge so a viewer can find their song.
+    // p.items: [{ title, image, who, avatar }] in line order; p.count = total
+    // waiting. Empty → hide the strip. Shows a window of pills (cover art behind
+    // each + the requester's avatar + their TRUE position), and when the queue is
+    // longer than the window it cycles through pages so every song gets shown.
     setQueue(p = {}) {
       const wrap = $("#queue");
       if (!wrap) return { ok: false };
-      const list = wrap.querySelector(".q-list");
       const items = Array.isArray(p.items) ? p.items : [];
       const count = clampNum(p.count, 0, 9999, items.length) | 0;
       if (!items.length) {
         wrap.dataset.show = "false";
-        if (list) list.innerHTML = "";
+        qItems = []; qSig = "";
+        if (qCycleTimer) { qCycleTimer.kill ? qCycleTimer.kill() : clearTimeout(qCycleTimer); qCycleTimer = null; }
+        const list = wrap.querySelector(".q-list"); if (list) list.innerHTML = "";
         return { ok: true, show: false };
       }
+      // header count: "N in queue" (singular-safe)
       const cnt = wrap.querySelector(".q-count");
       if (cnt) cnt.textContent = String(count);
-      if (list) {
-        const MAX = 4; // keep the strip readable; the rest roll up into "+N"
-        list.innerHTML = "";
-        items.slice(0, MAX).forEach((it, i) => {
-          const item = document.createElement("div"); item.className = "q-item";
-          const avWrap = document.createElement("div"); avWrap.className = "q-av-wrap";
-          avWrap.appendChild(avatarEl(it.who, it.avatar, 34));
-          const pos = document.createElement("span"); pos.className = "q-pos"; pos.textContent = String(i + 1);
-          avWrap.appendChild(pos);
-          const title = document.createElement("div"); title.className = "q-title";
-          title.textContent = clean(it.title, 30) || "—";
-          item.append(avWrap, title);
-          list.appendChild(item);
-        });
-        if (count > MAX) {
-          const more = document.createElement("div"); more.className = "q-more";
-          more.textContent = "+" + (count - MAX);
-          list.appendChild(more);
-        }
-      }
+      // only reset to the front of the line when the queue CONTENTS change — a
+      // like/now-playing refresh shouldn't yank the cycle back to page 1
+      const sig = items.map((i) => (i.title || "") + "|" + (i.who || "")).join("~");
+      qItems = items;
+      if (sig !== qSig) { qSig = sig; qStart = 0; }
+      renderQueueWindow();
+      startQueueCycle();
       const first = wrap.dataset.show !== "true";
       wrap.dataset.show = "true";
       if (gsap && first) gsap.fromTo(wrap, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" });

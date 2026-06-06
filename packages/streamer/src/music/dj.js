@@ -135,7 +135,7 @@ export function createDJ({ onUpdate = () => {}, onQueue = () => {}, log = () => 
   function queueData() {
     return {
       count: queue.length,
-      items: queue.map((t) => ({ title: t.title, artist: t.artist, who: t.who || "", avatar: t.avatar || "" })),
+      items: queue.map((t) => ({ title: t.title, artist: t.artist, image: t.image || "", who: t.who || "", avatar: t.avatar || "" })),
     };
   }
   // coalesce rapid updates (likes can arrive in bursts) into one scene push —
