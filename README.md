@@ -15,7 +15,7 @@ live** instead of rendered offline. This repo is the Suno-focused product — se
 [`docs/platform-directions.md`](docs/platform-directions.md) for the reusable
 kernel underneath.
 
-[![SunoLiveStream scene — layered gradient background, now-playing card, reactive visuals](docs/screenshot.png)](https://suno.com)
+[![SunoLiveStream main stage — now-playing panel with cover art + scan-to-open QR, an Up Next request queue, and a live chat feed over the song's cover backdrop](docs/screenshot.png)](https://suno.com)
 
 ## How it works
 
