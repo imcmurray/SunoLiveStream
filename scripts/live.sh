@@ -6,7 +6,7 @@
 #   scripts/live.sh down      # turn it ALL off: ingest + container
 #   scripts/live.sh up        # start just the streamer container
 #   scripts/live.sh build     # rebuild + start the container (after code changes)
-#   scripts/live.sh start     # (re)start just the chat ingest — single-instance
+#   scripts/live.sh start [URL]  # (re)start the chat ingest; pin a stream by URL/id (else auto-discover)
 #   scripts/live.sh stop      # stop just the chat ingest
 #   scripts/live.sh restart   # stop + start the ingest
 #   scripts/live.sh status    # is it running? + stream health + now-playing
@@ -64,13 +64,16 @@ stop() {
 }
 
 start() {
+  local vid="${1:-${YT_VIDEO_ID:-}}"   # optional: pin a stream by URL or video id
   stop >/dev/null            # guarantee single instance
   echo "[live] starting YouTube-chat ingest → $MUTATE_URL  (log: $LOG)"
+  [ -n "$vid" ] && echo "[live] pinning ingest to stream: $vid"
   nohup env \
     SOURCE=youtube \
     MUTATE_URL="$MUTATE_URL" \
     MOOD_TICK_MS="$MOOD_TICK_MS" \
     YT_QUOTA_LIMIT="$QUOTA_LIMIT" \
+    ${vid:+YT_VIDEO_ID="$vid"} \
     node "$ENTRY" > "$LOG" 2>&1 &
   disown
   sleep 4
@@ -88,7 +91,7 @@ wait_healthy() {
 }
 up()    { echo "[live] starting streamer container…";    docker compose up -d 2>&1 | tail -2;          wait_healthy; }
 build() { echo "[live] rebuilding streamer container…";  docker compose up -d --build 2>&1 | tail -2;  wait_healthy; }
-boot()  { up && start; }                                 # container + chat ingest in one go
+boot()  { up && start "${1:-}"; }                        # container + chat ingest in one go (optional stream url/id)
 down_all() {                                             # stop everything for the day
   stop
   echo "[live] stopping streamer container…"
@@ -268,10 +271,10 @@ case "${1:-status}" in
   up)        up ;;                 # start the streamer container
   build)     build ;;             # rebuild + start the container (after code changes)
   down)      down_all ;;          # stop the ingest AND the container (full off)
-  boot)      boot ;;              # container + chat ingest (full on)
-  start)     start ;;             # start just the chat ingest
+  boot)      boot "${2:-}" ;;     # container + chat ingest (full on); optional stream url/id
+  start)     start "${2:-}" ;;    # start just the chat ingest; optional stream url/id to pin
   stop)      stop ;;              # stop just the chat ingest
-  restart)   stop; sleep 1; start ;;
+  restart)   stop; sleep 1; start "${2:-}" ;;
   status)    status ;;
   logs)      tail -f "$LOG" ;;
   now)       printf '  '; now_playing ;;
@@ -284,5 +287,5 @@ case "${1:-status}" in
   onair|live) onair_show "${2:-10}" ;;  # countdown → reveal show + live queue (from intro)
   resume)    resume_show ;;       # instant reveal — back from tech/brb/outro (no countdown)
   json)      shift; node scripts/live-api.mjs "${1:-status}" ;; # JSON in/out for other systems
-  *) echo "usage: $0 {boot|down|up|build | start|stop|restart|status|logs | now|queue [<url>]|next | intro|onair [secs]|resume|tech|brb|outro | json '<json>'}"; exit 1 ;;
+  *) echo "usage: $0 {boot [stream-url]|down|up|build | start [stream-url]|stop|restart|status|logs | now|queue [<url>]|next | intro|onair [secs]|resume|tech|brb|outro | json '<json>'}"; exit 1 ;;
 esac

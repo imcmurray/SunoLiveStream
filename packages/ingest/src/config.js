@@ -1,6 +1,18 @@
 // All config via env so nothing secret is committed.
 const num = (v, d) => (v === undefined || v === "" ? d : Number(v));
 
+// Pull an 11-char YouTube video id out of whatever the operator pastes — a bare
+// id, a watch?v= link, youtu.be/…, /live/…, /embed/…, or a Studio /video/… URL.
+// Lets `YT_VIDEO_ID` (and `live.sh start <url>`) accept the stream's URL as-is.
+const ytVideoId = (raw) => {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+  const m = s.match(/[?&]v=([A-Za-z0-9_-]{11})/)
+        || s.match(/(?:youtu\.be|\/live|\/video|\/embed|\/shorts)\/([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : "";
+};
+
 export const config = {
   // where approved directives are POSTed (the Phase 0 streamer control plane)
   mutateUrl: process.env.MUTATE_URL || "http://localhost:8080/mutate",
@@ -61,7 +73,7 @@ export const config = {
     refreshToken: process.env.YT_REFRESH_TOKEN || "",
     // optional overrides: pin a chat id, or supply a short-lived token directly
     liveChatId: process.env.YT_LIVE_CHAT_ID || "", // blank = auto-discover the active broadcast
-    videoId: process.env.YT_VIDEO_ID || "",        // blank = auto-discover (for stream-like polling)
+    videoId: ytVideoId(process.env.YT_VIDEO_ID),   // pin a specific broadcast (id or full URL); blank = auto-discover
     accessToken: process.env.YT_ACCESS_TOKEN || "", // bypass refresh (manual/testing only)
     // Adaptive polling: poll fast while chat is active, back off when it's quiet
     // — far fewer calls/day than a fixed interval. (list = ~5 units/call,

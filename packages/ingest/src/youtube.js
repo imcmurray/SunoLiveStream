@@ -58,12 +58,40 @@ export async function discoverActiveBroadcast(token) {
   await bill(1); // liveBroadcasts.list ≈ 1 unit
   if (!res.ok) throw new Error(`liveBroadcasts.list http ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const j = await res.json();
-  const item = j.items?.[0];
+  // Prefer the most-recently-started broadcast that actually has a chat — so if
+  // an old auto/test broadcast lingers in "active" alongside a fresh one, we lock
+  // onto the new one instead of whatever the API happens to return first.
+  const items = (j.items || []).filter((it) => it.snippet?.liveChatId);
+  items.sort((a, b) => new Date(b.snippet.actualStartTime || 0) - new Date(a.snippet.actualStartTime || 0));
+  const item = items[0];
   return { id: item?.id || "", liveChatId: item?.snippet?.liveChatId || "" };
+}
+
+// chat id for ONE specific broadcast (owner's own), by video id — used to pin the
+// exact stream from its URL, bypassing the ambiguous "what's active" guess.
+async function liveChatForVideoId(token, videoId) {
+  const url = new URL("https://www.googleapis.com/youtube/v3/liveBroadcasts");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("id", videoId);
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  await bill(1);
+  if (!res.ok) throw new Error(`liveBroadcasts.list(id) http ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  const j = await res.json();
+  return j.items?.[0]?.snippet?.liveChatId || "";
 }
 
 async function resolveLiveChatId(token) {
   if (config.yt.liveChatId) return config.yt.liveChatId;
+  // pinned video id (e.g. pasted stream URL): attach to THAT broadcast's chat
+  if (config.yt.videoId) {
+    for (;;) {
+      const chat = await liveChatForVideoId(token, config.yt.videoId)
+        .catch((e) => { console.error("[youtube] resolve(videoId):", e.message); return ""; });
+      if (chat) { console.log(`[youtube] pinned to video ${config.yt.videoId}`); return chat; }
+      console.log(`[youtube] video ${config.yt.videoId} has no chat yet — re-checking in 15s (is it live + chat enabled?)`);
+      await sleep(15000);
+    }
+  }
   for (;;) {
     const b = await discoverActiveBroadcast(token).catch((e) => { console.error("[youtube] discover:", e.message); return { liveChatId: "" }; });
     if (b.liveChatId) return b.liveChatId;
