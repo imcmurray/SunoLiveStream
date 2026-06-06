@@ -1,85 +1,104 @@
-# HyperLive
+# SunoLiveStream
 
-A comment- and payment-driven **live YouTube channel** where viewers steer the
-video in real time. Built on a [HyperFrames](https://github.com/heygen-com/hyperframes)-style
-HTML/CSS/animation authoring model, but streamed live instead of rendered offline.
+A 24/7 **live YouTube channel where viewers request AI-generated
+[Suno](https://suno.com) songs and collectively steer the visuals** — every
+moment captured so it's watchable later. Paste a Suno link in live chat; it
+queues, plays, and the crowd's hearts, votes, and reactions drive a real-time
+scene.
 
-> Write HTML. Mutate it live from moderated chat. Stream it to YouTube.
+> Request a song. Heart it. Shape the room. All live.
 
-**▶ [Watch a demo on YouTube](https://www.youtube.com/live/NjpZs7JjWIU)** <sub>(captured during a dev session)</sub>
+Built on the **[HyperLive](https://github.com/imcmurray/hyperlive)** broadcast
+engine (its upstream): a HyperFrames-style HTML/CSS/animation scene **streamed
+live** instead of rendered offline. This repo is the Suno-focused product — see
+**[`VISION.md`](VISION.md)** for the fork charter + roadmap, and HyperLive's
+[`docs/platform-directions.md`](docs/platform-directions.md) for the reusable
+kernel underneath.
 
-[![HyperLive scene — layered gradient background, mutable titles, and a pop-up countdown card](docs/screenshot.png)](https://www.youtube.com/live/NjpZs7JjWIU)
+[![SunoLiveStream scene — layered gradient background, now-playing card, reactive visuals](docs/screenshot.png)](https://suno.com)
 
-<sub>The live scene: kicker / gradient headline / subhead, the bottom pop-up cards with countdown dots, and (top) the on-screen warning shown when it auto-falls back to CPU rendering. Click to watch the demo.</sub>
+## How it works
 
-## The idea
+- A long-lived **HTML/CSS/GSAP scene** renders in a real headless browser and is
+  captured live (CDP screencast / `x11grab` → ffmpeg) to **YouTube RTMP** — one
+  continuous stream.
+- An **auto-DJ** resolves viewer-requested Suno share links to playable audio,
+  plays the request queue then a house rotation, with an intro-music loop under
+  the standby screen.
+- Moderated chat becomes **scene directives** (`{action, params}`) against an
+  allow-list — viewer input is only ever *arguments* to pre-vetted actions, never
+  markup or code.
+- The crowd drives the atmosphere: per-song **hearts** (persist across replays),
+  theme **votes**, a **Mood Engine**, instant **reactions**, **Super-Chat** tiers,
+  and **stream-like milestones**.
+- **Show flow**: intro → 10s on-air countdown → live; break / technical / outro
+  screens with an artist **credit roll** + a Made-with-Suno rights line.
 
-- A long-lived **HTML/CSS/GSAP scene** renders in a real (headless) browser.
-- A real-time **browser capture** (Xvfb + ffmpeg `x11grab`) pushes it to
-  **YouTube Live** over RTMP — a single continuous stream.
-- Viewers' **chat comments**, once moderated, become **scene directives**
-  (`{action, params}`) that mutate the scene live.
-- **Super Chats** escalate the effect by amount tier — small = shoutout,
-  medium = scene change, large = a pre-rendered HyperFrames "takeover" clip.
-- A **moderation gate** sits in front of everything; viewer input can only ever
-  become *arguments* to pre-vetted actions, never executable markup.
+## Request a song (viewers)
 
-## Why this architecture (the key bet)
+In the **live-chat panel**, paste a Suno link — either form works:
 
-HyperFrames is a *deterministic, offline* HTML→MP4 renderer — fantastic for
-polished clips, but a 30–90s render+buffer delay would kill live interactivity.
-So the **live surface is a real-time captured browser scene** (low latency,
-live DOM mutation), and HyperFrames' offline renderer is reserved for
-high-quality **pre-rendered takeover clips**. See [`docs/phase0.md`](docs/phase0.md)
-for the full rationale.
-
-## Status
-
-| Phase | What | State |
-|-------|------|-------|
-| **0** | Transport spike: live scene → x11grab → ffmpeg → YouTube RTMP, mutable while live | ✅ built + verified live (`packages/streamer`) |
-| **1** | Comments → moderation gate → rule-based director → `/mutate` | ✅ built + verified live via simulator (`packages/ingest`); real YouTube polling ready, needs OAuth — see [`docs/phase1.md`](docs/phase1.md) |
-| **2** | Swap the director's `parseIntent()` for a **Claude** call (same directive shape, re-validated) | ✅ built (`packages/ingest`, `DIRECTOR=llm`); needs `ANTHROPIC_API_KEY` to run — see [`docs/phase2.md`](docs/phase2.md) |
-| 3 | Super Chat tiers → escalating effects + pre-rendered takeover clips | partial (tiers→shoutouts done; takeover clips pending) |
-| 4 | Hardening: reconnect, watchdog, 1080p60, kill-switch dashboard | planned (`packages/dashboard`) |
-
-## Quick start (Phase 0)
-
-```bash
-# one-time on EndeavourOS/Arch: sudo pacman -S docker-compose
-cp .env.example .env      # add your YouTube stream key, set DRY_RUN=false
-docker compose up --build
-# then, while it streams:
-scripts/mutate.sh '{"action":"setTheme","params":{"theme":"forest"}}'
+```
+https://suno.com/s/<id>        ← Share-button short link
+https://suno.com/song/<uuid>   ← song-page URL
 ```
 
-Full walkthrough + YouTube key setup + CPU notes: **[`docs/phase0.md`](docs/phase0.md)**.
+A ❤️ in chat likes the current song. Note: YouTube only lets **verified or
+moderator** accounts post links in live chat.
+
+## Quick start (operator)
+
+```bash
+cp ../hyperlive/.env .     # or: cp .env.example .env  and fill it in
+scripts/live.sh build      # build + start the streamer container
+scripts/live.sh start      # start the chat ingest (host process)
+scripts/live.sh status     # health + now-playing + show phase
+```
+
+Live-ops: `scripts/live.sh {intro|onair [secs]|resume|tech|brb|outro|now|queue [url]|next}`
+— full reference in **[`docs/live-ops.md`](docs/live-ops.md)**.
 
 ## Layout
 
 ```
 packages/
-  streamer/   ✅ Phase 0: scene + browser capture + ffmpeg→RTMP + /mutate
-  director/      Phase 2: Claude brain that emits validated directives
-  ingest/        Phase 1/3: YouTube chat + Super Chat ingestion + moderation
-  dashboard/     Phase 4: operator console + kill switch
-docs/phase0.md   transport spike walkthrough
-scripts/         mutate.sh / mutate-file.sh helpers
+  streamer/   scene + headless capture + ffmpeg→RTMP + /mutate + auto-DJ (src/music/)
+  ingest/     YouTube live-chat poll + moderation + director + music requests + votes
+  dashboard/  operator console + kill switch (planned)
+scripts/live.sh   one tool to run the whole show
+VISION.md         product charter + roadmap
+docs/             phase notes, live-ops, platform-directions
 ```
 
-## Credits & acknowledgements
+## Operational truths (don't relearn these the hard way)
 
-HyperLive was inspired by and bootstrapped from
-**[HyperFrames](https://github.com/heygen-com/hyperframes)** by
+- **Post in the live-chat panel**, not the video's comments — only live chat feeds
+  the API. Viewer links need **verified/moderator** status.
+- **`live.sh build` = container/streamer; `live.sh restart` = host ingest** — two
+  processes; a code fix won't take until the *right* one restarts.
+- This iGPU's H264 encoder is **CQP-only** → use CPU libx264 **CBR**
+  (`HW_ENCODE=false`) for a guaranteed bitrate ("excellent" stream quality).
+
+## Relationship to HyperLive
+
+`hyperlive` is wired as the **`upstream`** remote. Pull core/platform fixes down;
+keep the Suno layer thin so merges stay clean:
+
+```bash
+git fetch upstream && git merge upstream/main
+```
+
+## Credits
+
+SunoLiveStream is the Suno-focused fork of
+**[HyperLive](https://github.com/imcmurray/hyperlive)**, which was itself
+bootstrapped from **[HyperFrames](https://github.com/heygen-com/hyperframes)** by
 [HeyGen](https://github.com/heygen-com) — an open-source, agent-friendly
-framework for turning HTML + CSS + animations into deterministic MP4 videos
-("Write HTML. Render video. Built for agents."). HyperLive borrows its
-HTML-first authoring model and component sensibility, then takes the idea in a
-different direction: **live, real-time, chat-driven streaming** instead of
-deterministic offline rendering.
+framework for turning HTML + CSS + animations into deterministic MP4 videos.
 
-Huge thanks to the HyperFrames authors for the foundation. ❤️
+Songs are created on **Suno** by their artists, who retain the rights to their own
+work — played here with thanks. ❤️
 
 ---
 
-License: Apache-2.0 (matching upstream HyperFrames).
+License: Apache-2.0 (matching upstream HyperFrames / HyperLive).
