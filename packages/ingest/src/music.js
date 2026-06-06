@@ -30,7 +30,7 @@ export function createMusic({ baseUrl }) {
     }
   }
   return {
-    enqueue: (link, who) => post("/enqueue", { link, who }),
+    enqueue: (link, who, avatar) => post("/enqueue", { link, who, avatar }),
     like: (who) => post("/like", { who }),
   };
 }

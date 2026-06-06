@@ -22,7 +22,7 @@ const QUEUE_FILE = process.env.MUSIC_QUEUE_FILE || "./control/music-queue.json";
 // likers per song → "one like per author per song" survives replays too.
 const SONG_LIKES_FILE = process.env.SONG_LIKES_FILE || "./control/song-likes.json";
 
-export function createDJ({ onUpdate = () => {}, log = () => {}, mode: initialMode = "live" }) {
+export function createDJ({ onUpdate = () => {}, onQueue = () => {}, log = () => {}, mode: initialMode = "live" }) {
   const rotation = [];        // resolved house tracks {audioUrl,title,artist,share}
   const intro = [];           // resolved pre-show intro tracks (looped in "intro" mode)
   const queue = [];           // resolved requests {..., who}
@@ -109,6 +109,7 @@ export function createDJ({ onUpdate = () => {}, log = () => {}, mode: initialMod
       title: current?.title || "",
       artist: current?.artist || "",
       image: current?.image || "",         // cover art (Suno og:image)
+      share: current?.share || "",         // Suno share link (drives the scannable QR)
       who: current?.who || "",            // who requested it ("" = house rotation)
       source: current?.source || "",       // "intro" | "request" | "rotation"
       likes: current ? current.likes.size : 0,
@@ -122,17 +123,26 @@ export function createDJ({ onUpdate = () => {}, log = () => {}, mode: initialMod
     const n = rotation.length;
     const i = n ? rotIdx % n : 0;
     const rot = n ? rotation.slice(i).concat(rotation.slice(0, i)) : [];
-    const lite = (t) => ({ title: t.title, artist: t.artist, image: t.image || "", who: t.who || "" });
+    const lite = (t) => ({ title: t.title, artist: t.artist, image: t.image || "", who: t.who || "", avatar: t.avatar || "" });
     return {
       current: current?.title ? { ...lite(current), source: current.source || "", likes: current.likes.size } : null,
       queue: queue.map(lite),
       rotation: rot.map((t) => ({ title: t.title, artist: t.artist, image: t.image || "" })),
     };
   }
-  // coalesce rapid updates (likes can arrive in bursts) into one scene push
+  // just the WAITING request queue, in line order, for the on-screen queue strip:
+  // title + the requester's name/avatar so a viewer can spot their own song.
+  function queueData() {
+    return {
+      count: queue.length,
+      items: queue.map((t) => ({ title: t.title, artist: t.artist, who: t.who || "", avatar: t.avatar || "" })),
+    };
+  }
+  // coalesce rapid updates (likes can arrive in bursts) into one scene push —
+  // refreshes both the now-playing card and the request-queue strip together
   function pushUpdate() {
     if (updateTimer) return;
-    updateTimer = setTimeout(() => { updateTimer = null; onUpdate(status()); }, 120);
+    updateTimer = setTimeout(() => { updateTimer = null; onUpdate(status()); onQueue(queueData()); }, 120);
   }
 
   async function resolveAll(links, who) {
@@ -219,15 +229,16 @@ export function createDJ({ onUpdate = () => {}, log = () => {}, mode: initialMod
       if (first) play(first); else log("[dj] no playable rotation tracks — idle");
     },
 
-    // add a requested Suno share link to the queue (resolved + validated here)
-    async enqueue(shareUrl, who) {
+    // add a requested Suno share link to the queue (resolved + validated here).
+    // `avatar` is the requester's profile pic (shown on the queue strip).
+    async enqueue(shareUrl, who, avatar) {
       if (queue.length >= config.queueMax) return { ok: false, reason: "queue full" };
       if (queue.some((t) => t.share === shareUrl) || current?.share === shareUrl) {
         return { ok: false, reason: "already queued" };
       }
       const r = await resolveSuno(shareUrl).catch(() => ({ ok: false, error: "resolve error" }));
       if (!r.ok) return { ok: false, reason: r.error || "could not resolve" };
-      queue.push({ audioUrl: r.audioUrl, image: r.image, title: r.title, artist: r.artist, share: shareUrl, who: who || "" });
+      queue.push({ audioUrl: r.audioUrl, image: r.image, title: r.title, artist: r.artist, share: shareUrl, who: who || "", avatar: avatar || "" });
       saveQueue();
       log(`  ♪ queued: ${r.title} — ${r.artist} (req ${who || "?"}) [${queue.length} in queue]`);
       pushUpdate();

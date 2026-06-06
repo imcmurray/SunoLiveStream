@@ -28,7 +28,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."   # repo root
 
-LOG="${LIVE_LOG:-/tmp/hyperlive-ingest.log}"
+LOG="${LIVE_LOG:-/tmp/sunolivestream-ingest.log}"
 MUTATE_URL="${MUTATE_URL:-http://localhost:8080/mutate}"
 CONTROL="${CONTROL_BASE:-http://localhost:8080}"
 MOOD_TICK_MS="${MOOD_TICK_MS:-6000}"

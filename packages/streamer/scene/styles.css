@@ -157,10 +157,17 @@ html, body {
 .cover-bg {
   position: absolute; inset: -6%; z-index: 0; pointer-events: none;
   background-size: cover; background-position: center;
-  filter: blur(17px) saturate(1.2) brightness(0.85);
+  filter: blur(10px) saturate(1.22) brightness(0.95);
   opacity: 0; will-change: transform, opacity, filter; /* opacity/filter driven by GSAP */
 }
-body.has-cover .bg-base { opacity: 0.45; }
+/* with a cover up (i.e. on air), the album art is the hero: pull the theme
+   gradient, auras, grid and scanlines WAY back so the cover reads through
+   strongly instead of fighting the effects */
+body.has-cover .bg-base { opacity: 0.22; }
+body.has-cover .aura { opacity: 0.26; transition: opacity 1.5s ease; }
+body.has-cover .aura-3 { opacity: 0.16; }
+body.has-cover .bg-grid { opacity: 0.18; transition: opacity 1.5s ease; }
+body.has-cover .ovl-scanlines { opacity: 0.14; }
 
 /* soft color auras — radial gradients (cheap) instead of blurred solids */
 .aura {
@@ -468,37 +475,48 @@ body.has-cover .bg-base { opacity: 0.45; }
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* now-playing card (auto-DJ) — lower-left, with the vibe chip stacked above it */
+/* main-stage now-playing showcase (auto-DJ) — a wide, song-forward panel
+   anchored bottom-center: big cover, song + artist details, a live like/queue
+   meter, and a QR that opens the exact Suno song. Centered with margin math (not
+   translateX) so the GSAP entrance can animate y/opacity without fighting the
+   centering transform. */
 #nowplaying {
-  position: absolute; left: 40px; bottom: 36px; z-index: 7;
-  display: flex; align-items: center; gap: 14px; max-width: 460px;
-  padding: 12px 18px; border-radius: 14px;
-  background: linear-gradient(135deg, rgba(14,10,30,0.86), rgba(8,6,20,0.78));
-  border: 1px solid color-mix(in srgb, var(--c3) 38%, rgba(255,255,255,0.12));
-  box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+  position: absolute; left: 50%; margin-left: -380px; bottom: 40px; z-index: 7;
+  width: 760px; box-sizing: border-box;
+  display: flex; align-items: center; gap: 22px;
+  padding: 18px 22px; border-radius: 20px;
+  background: linear-gradient(135deg, rgba(14,10,30,0.9), rgba(8,6,20,0.82));
+  border: 1px solid color-mix(in srgb, var(--c3) 40%, rgba(255,255,255,0.12));
+  box-shadow: 0 18px 54px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
   will-change: transform, opacity;
+  overflow: hidden; /* clip the drifting cover layer to the panel */
 }
-#nowplaying { overflow: hidden; } /* clip the drifting cover layer to the card */
 #nowplaying[data-show="false"] { display: none; }
 #nowplaying > *:not(.np-bg) { position: relative; z-index: 1; } /* content above the cover */
 /* dim, blurred cover behind the content — slowly drifts (Ken Burns) */
 .np-bg {
   position: absolute; inset: -10%; z-index: 0; pointer-events: none;
   background-size: cover; background-position: center;
-  opacity: 0.34; filter: blur(3px) saturate(1.15); will-change: transform;
-  /* fade the cover toward the left so the title/art stay clean, stronger right */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 45%);
-          mask-image: linear-gradient(90deg, transparent 0%, #000 45%);
+  opacity: 0.22; filter: blur(4px) saturate(1.15); will-change: transform;
+  /* fade the cover in from both ends so the central text stays clean */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
+          mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
 }
-/* cover art (Suno og:image) */
+/* cover art (Suno og:image) — the hero album thumbnail */
 .np-art {
-  width: 46px; height: 46px; flex: 0 0 auto; border-radius: 9px;
+  width: 128px; height: 128px; flex: 0 0 auto; border-radius: 16px;
   background-size: cover; background-position: center;
-  border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 8px 24px rgba(0,0,0,0.55);
 }
 .np-art[data-show="false"] { display: none; }
+.np-col { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 5px; }
+.np-eyebrow { display: flex; align-items: center; gap: 11px; }
+.np-nowtag {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase;
+  color: var(--c3); text-shadow: 0 0 12px color-mix(in srgb, var(--c3) 50%, transparent);
+}
 /* little equalizer bars (animate only while playing) */
-.np-eq { display: inline-flex; align-items: flex-end; gap: 3px; height: 26px; flex: 0 0 auto; }
+.np-eq { display: inline-flex; align-items: flex-end; gap: 3px; height: 24px; flex: 0 0 auto; }
 .np-eq i { width: 4px; height: 30%; border-radius: 2px; background: linear-gradient(var(--c3), var(--c1)); }
 /* idle: gentle canned animation until the live meter takes over */
 #nowplaying.playing .np-eq i { animation: npbar 0.9s ease-in-out infinite; }
@@ -510,14 +528,62 @@ body.has-cover .bg-base { opacity: 0.45; }
 /* reactive: heights set live from the music; CSS transition smooths between
    the ~18fps updates so motion stays fluid */
 #nowplaying.reactive .np-eq i { animation: none; transition: height 0.045s linear; }
-.np-col { display: flex; flex-direction: column; min-width: 0; }
-.np-title { font-size: 18px; font-weight: 700; letter-spacing: 0.01em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
-.np-sub { font-size: 13px; margin-top: 2px; color: rgba(255,255,255,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px; }
+.np-title { font-size: 30px; font-weight: 800; letter-spacing: 0.005em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
+.np-sub { font-size: 18px; color: rgba(255,255,255,0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
+.np-sub .np-artist { font-weight: 600; color: #fff; }
 .np-sub .np-by { color: color-mix(in srgb, var(--c3) 80%, #fff); }
-.np-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-left: auto; padding-left: 8px; }
-.np-likes { font-size: 15px; font-weight: 700; color: #ff5e87; text-shadow: 0 0 12px rgba(255,94,135,0.5); white-space: nowrap; }
-.np-queue { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55); white-space: nowrap; }
+.np-stats { display: flex; align-items: center; gap: 18px; margin-top: 3px; }
+.np-likes { font-size: 16px; font-weight: 700; color: #ff5e87; text-shadow: 0 0 12px rgba(255,94,135,0.5); white-space: nowrap; }
+.np-queue { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.6); white-space: nowrap; }
 .np-queue[data-show="false"] { display: none; }
+.np-suno { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: rgba(255,255,255,0.55); white-space: nowrap; }
+/* QR panel — a scannable code that opens the exact Suno song page */
+.np-qr { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 0 0 auto; }
+.np-qr[data-show="false"] { display: none; }
+.np-qr-code {
+  width: 116px; height: 116px; box-sizing: border-box; padding: 8px;
+  background: #fff; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+}
+.np-qr-code svg { display: block; width: 100%; height: 100%; }
+.np-qr-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: rgba(255,255,255,0.82); text-align: center; max-width: 124px; line-height: 1.3;
+}
+
+/* request queue strip — centered just above the now-playing panel, same width
+   so the two read as one stacked unit. Shows the line order left→right with the
+   requester's avatar (+ a position badge) so a viewer can spot their own song. */
+#queue {
+  position: absolute; left: 50%; margin-left: -380px; bottom: 220px; z-index: 6;
+  width: 760px; box-sizing: border-box;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 18px; border-radius: 16px;
+  background: linear-gradient(135deg, rgba(14,10,30,0.82), rgba(8,6,20,0.72));
+  border: 1px solid color-mix(in srgb, var(--c1) 34%, rgba(255,255,255,0.1));
+  box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+  will-change: transform, opacity;
+}
+#queue[data-show="false"] { display: none; }
+.q-head { display: flex; flex-direction: column; flex: 0 0 auto; line-height: 1.2; }
+.q-label { font-size: 12px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--c1); text-shadow: 0 0 12px color-mix(in srgb, var(--c1) 45%, transparent); }
+.q-sub { font-size: 12px; color: rgba(255,255,255,0.55); margin-top: 1px; }
+.q-count { color: #fff; font-weight: 800; }
+.q-list { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.q-item {
+  display: flex; align-items: center; gap: 9px; flex: 0 0 auto; max-width: 168px;
+  padding: 5px 12px 5px 6px; border-radius: 999px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.09);
+}
+.q-av-wrap { position: relative; flex: 0 0 auto; }
+.q-pos {
+  position: absolute; right: -3px; bottom: -3px;
+  min-width: 16px; height: 16px; padding: 0 3px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; color: #0c0820;
+  background: var(--c1); border-radius: 999px; border: 1.5px solid rgba(10,8,24,0.9);
+}
+.q-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 112px; }
+.q-more { flex: 0 0 auto; font-size: 14px; font-weight: 800; color: rgba(255,255,255,0.7); padding: 0 6px; white-space: nowrap; }
 
 /* "current vibe" chip — quiet, glowing, lower-left mood caption (above now-playing) */
 #vibe {

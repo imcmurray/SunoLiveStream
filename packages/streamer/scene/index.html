@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=1280, height=720" />
-    <title>Hyperframes Live — Scene</title>
+    <title>SunoLiveStream — Scene</title>
 
     <!--
       HyperFrames-style authoring: a fixed-size #stage, plain HTML + CSS, GSAP
@@ -13,8 +13,10 @@
       for software rendering (no GPU, no big blur filters, no WebGL).
     -->
     <link rel="stylesheet" href="/styles.css" />
-    <!-- GSAP vendored locally so a 24/7 stream never depends on a CDN. -->
+    <!-- GSAP + the QR generator vendored locally so a 24/7 stream never depends
+         on a CDN. The QR turns the live Suno share link into a scannable code. -->
     <script src="/vendor/gsap.min.js"></script>
+    <script src="/vendor/qrcode.min.js"></script>
   </head>
 
   <body class="theme-synthwave">
@@ -63,9 +65,9 @@
 
       <!-- ====== content ====== -->
       <main id="content">
-        <div id="kicker">HYPERFRAMES&nbsp;LIVE</div>
-        <h1 id="headline"><span id="headline-inner">Premium Scene — Live</span></h1>
-        <p id="subhead">Layered depth, smooth theme crossfades, lightweight effects.</p>
+        <div id="kicker">SUNO&nbsp;LIVE&nbsp;STREAM</div>
+        <h1 id="headline"><span id="headline-inner">Suno, live &amp; non-stop</span></h1>
+        <p id="subhead">An endless radio of Suno songs — drop a share link in chat to queue yours.</p>
       </main>
 
       <!-- shoutout cards mount here -->
@@ -110,18 +112,40 @@
       <!-- subtle "current vibe" chip — the Collective Mood Engine's descriptor -->
       <div id="vibe" data-show="false"></div>
 
-      <!-- now-playing card (auto-DJ): track + requester + like meter + queue -->
+      <!-- request queue (auto-DJ): when viewers drop Suno links in chat, show how
+           many are waiting + the line order, with each requester's profile pic so
+           people can spot where their song is. Sits just above the now-playing
+           strip; hidden whenever the queue is empty. -->
+      <div id="queue" data-show="false">
+        <div class="q-head">
+          <span class="q-label">Up Next</span>
+          <span class="q-sub"><span class="q-count">0</span> requested</span>
+        </div>
+        <div class="q-list"></div>
+      </div>
+
+      <!-- main-stage now-playing showcase (auto-DJ): big cover + song/artist
+           details + a live like/queue meter, and a QR that opens the exact Suno
+           song so listeners can scan straight to the artist's page. -->
       <div id="nowplaying" data-show="false">
         <span class="np-bg" aria-hidden="true"></span>
         <span class="np-art" data-show="false" aria-hidden="true"></span>
-        <span class="np-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <div class="np-col">
+          <div class="np-eyebrow">
+            <span class="np-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+            <span class="np-nowtag">NOW PLAYING</span>
+          </div>
           <div class="np-title">—</div>
           <div class="np-sub"><span class="np-artist"></span><span class="np-by"></span></div>
+          <div class="np-stats">
+            <span class="np-likes">♥ <span class="np-like-count">0</span></span>
+            <span class="np-queue" data-show="false">▶ <span class="np-queue-count">0</span> queued</span>
+            <span class="np-suno">♪ Made with Suno</span>
+          </div>
         </div>
-        <div class="np-side">
-          <div class="np-likes">♥ <span class="np-like-count">0</span></div>
-          <div class="np-queue" data-show="false">▶ <span class="np-queue-count">0</span> queued</div>
+        <div class="np-qr" data-show="false">
+          <div class="np-qr-code" aria-hidden="true"></div>
+          <div class="np-qr-label">SCAN TO OPEN IN SUNO</div>
         </div>
       </div>
 
@@ -154,7 +178,7 @@
               full rights to their own song. Played here with thanks to the artists.
             </p>
             <div class="sb-links">
-              <span class="sb-link"><img class="sb-logo sb-logo-gh" src="/assets/github.png" alt="GitHub" />github.com/imcmurray/hyperlive</span>
+              <span class="sb-link"><img class="sb-logo sb-logo-gh" src="/assets/github.png" alt="GitHub" />github.com/imcmurray/SunoLiveStream</span>
               <span class="sb-link"><img class="sb-logo sb-logo-suno" src="/assets/suno.png" alt="Suno" />suno.com</span>
             </div>
           </div>

@@ -60,7 +60,7 @@ async function runAuthFlow() {
       if (!c && !err) {
         res.writeHead(200, { "content-type": "text/html" });
         res.end(`<html><body style="font-family:system-ui,sans-serif;text-align:center;padding:4rem;background:#0b0820;color:#eee">
-          <h2>HyperLive — connect YouTube chat</h2>
+          <h2>SunoLiveStream — connect YouTube chat</h2>
           <p style="opacity:.7">Grant read-only access to your live chat.</p>
           <p style="margin-top:2rem"><a href="${authUrl.toString()}" style="display:inline-block;padding:16px 34px;background:#7a2bff;color:#fff;border-radius:12px;text-decoration:none;font-weight:700;font-size:18px">Authorize with Google →</a></p>
           </body></html>`);

@@ -78,7 +78,7 @@ async function handle(comment) {
   if (config.music) {
     const link = parseSunoShare(comment.text);
     if (link) {
-      const r = await music.enqueue(link, comment.author).catch(() => ({ ok: false }));
+      const r = await music.enqueue(link, comment.author, comment.avatar).catch(() => ({ ok: false }));
       if (r.ok) {
         console.log(`  ♪ QUEUE ${comment.author} → ${r.title} — ${r.artist} [#${r.position}]`);
         postMutate({ action: "react", params: { kind: "sparkle", who: comment.author } }).catch(() => {});

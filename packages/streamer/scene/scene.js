@@ -80,20 +80,41 @@
   let npBgTween = null;      // now-playing cover Ken Burns drift
   let coverLayer = 0;        // which full-stage cover layer is visible (0=a, 1=b)
   let npImg = "";            // current cover url (restart the drift only on track change)
+  let npShare = "";          // current Suno share url (rebuild the QR only on track change)
   let countdownCalls = [];   // the running "going live" countdown's scheduled ticks
 
   // ---- full-stage cover backdrop: crossfade between songs, slow drift + a
-  // gentle focus pull (unblur → reblur) for life. Two layers crossfade.
+  // gentle focus pull (unblur → reblur) for life. Two layers crossfade. The
+  // cover is the on-air focal point, so it sits HIGH-opacity and lightly blurred
+  // (the theme/auras/grid dim back via body.has-cover in CSS), with a slow
+  // opacity "breathe" so it stays alive and reads as the hero behind the show.
+  const COVER_HI = 0.86; // peak backdrop opacity (prominent)
+  const COVER_LO = 0.68; // trough of the slow breathe
   function startCoverDrift(el) {
     if (!gsap || !el) return;
     gsap.killTweensOf(el, "scale,x,y");
-    gsap.fromTo(el, { scale: 1.06, x: -16, y: 9 },
-      { scale: 1.18, x: 16, y: -11, duration: 30, ease: "sine.inOut", yoyo: true, repeat: -1 });
+    // slower, wider Ken Burns drift so the album art glides rather than wanders
+    gsap.fromTo(el, { scale: 1.05, x: -14, y: 8 },
+      { scale: 1.16, x: 14, y: -10, duration: 46, ease: "sine.inOut", yoyo: true, repeat: -1 });
     if (el._blur) el._blur.kill();
-    const f = { b: 17 };
-    const apply = () => { el.style.filter = `blur(${f.b.toFixed(1)}px) saturate(1.2) brightness(0.85)`; };
+    // lighter blur range than before → the cover stays legible, not just a wash
+    const f = { b: 10 };
+    const apply = () => { el.style.filter = `blur(${f.b.toFixed(1)}px) saturate(1.22) brightness(0.95)`; };
     apply();
-    el._blur = gsap.to(f, { b: 8, duration: 13, ease: "sine.inOut", yoyo: true, repeat: -1, onUpdate: apply });
+    el._blur = gsap.to(f, { b: 5, duration: 17, ease: "sine.inOut", yoyo: true, repeat: -1, onUpdate: apply });
+  }
+  // slow opacity breathe — added once the layer has faded in, so it pulses
+  // between COVER_HI and COVER_LO and the backdrop never feels static
+  function startCoverBreathe(el) {
+    if (!gsap || !el) return;
+    if (el._breathe) el._breathe.kill();
+    el._breathe = gsap.fromTo(el, { opacity: COVER_HI },
+      { opacity: COVER_LO, duration: 12, ease: "sine.inOut", yoyo: true, repeat: -1 });
+  }
+  function stopCoverTweens(el) {
+    gsap.killTweensOf(el, "scale,x,y,opacity");
+    if (el._blur) { el._blur.kill(); el._blur = null; }
+    if (el._breathe) { el._breathe.kill(); el._breathe = null; }
   }
   function setStageCover(img) {
     const a = $("#cover-bg-a"), b = $("#cover-bg-b");
@@ -102,17 +123,46 @@
     const layers = [a, b];
     const cur = layers[coverLayer];
     if (!img) { // no cover → fade both out, stop their drifts
-      for (const el of layers) { gsap.killTweensOf(el, "scale,x,y"); if (el._blur) { el._blur.kill(); el._blur = null; } gsap.to(el, { opacity: 0, duration: 1.3, ease: "sine.inOut" }); }
+      for (const el of layers) { stopCoverTweens(el); gsap.to(el, { opacity: 0, duration: 1.3, ease: "sine.inOut" }); }
       return;
     }
     const next = layers[coverLayer ^ 1];
     next.style.backgroundImage = `url("${img}")`;
+    stopCoverTweens(next);
     startCoverDrift(next);
-    gsap.fromTo(next, { opacity: 0 }, { opacity: 0.6, duration: 1.6, ease: "sine.inOut" });
-    // fade the outgoing layer out + stop its drift/blur (no point re-blurring it)
-    gsap.killTweensOf(cur, "scale,x,y"); if (cur._blur) { cur._blur.kill(); cur._blur = null; }
-    gsap.to(cur, { opacity: 0, duration: 1.5, ease: "sine.inOut" });
+    gsap.fromTo(next, { opacity: 0 }, { opacity: COVER_HI, duration: 1.8, ease: "sine.inOut",
+      onComplete: () => startCoverBreathe(next) });
+    // fade the outgoing layer out + stop its drift/blur/breathe
+    stopCoverTweens(cur);
+    gsap.to(cur, { opacity: 0, duration: 1.6, ease: "sine.inOut" });
     coverLayer ^= 1;
+  }
+
+  // ---- now-playing QR: turn the live Suno share link into a scannable code so
+  // listeners can jump straight to the song's page (and the artist) on Suno.
+  // Uses the vendored qrcode-generator (no network). typeNumber 0 = auto-size;
+  // fall back to escalating fixed types if a build doesn't support auto.
+  function buildQR(text) {
+    const factory = window.qrcode;
+    if (typeof factory !== "function" || !text) return null;
+    for (const t of [0, 4, 6, 8, 10, 13, 20]) {
+      try {
+        const q = factory(t, "M"); // M = ~15% error correction (scan-robust on screen)
+        q.addData(text);
+        q.make();
+        return q;
+      } catch (_e) { /* data too long for this type — try a larger one */ }
+    }
+    return null;
+  }
+  function setNpQR(url) {
+    const wrap = $(".np-qr"), holder = $(".np-qr-code");
+    if (!wrap || !holder) return;
+    const q = url ? buildQR(url) : null;
+    if (!q) { wrap.dataset.show = "false"; holder.innerHTML = ""; return; }
+    // scalable SVG (viewBox only) → CSS sizes it; margin in modules (quiet zone)
+    holder.innerHTML = q.createSvgTag({ cellSize: 6, margin: 1, scalable: true });
+    wrap.dataset.show = "true";
   }
   function voteShow(on) {
     const el = $("#vote");
@@ -760,7 +810,7 @@
     },
 
     setHeadline(p = {}) {
-      const text = clean(p.text, 90) || "Hyperframes Live";
+      const text = clean(p.text, 90) || "Suno Live Stream";
       const el = $("#headline-inner");
       if (!el) return { text };
       if (!gsap) { el.textContent = text; return { text }; }
@@ -775,7 +825,7 @@
 
     // the small kicker label above the headline
     setKicker(p = {}) {
-      const text = (clean(p.text, 40) || "HYPERFRAMES LIVE").toUpperCase();
+      const text = (clean(p.text, 40) || "SUNO LIVE STREAM").toUpperCase();
       const el = $("#kicker");
       if (!el) return { text };
       if (!gsap) { el.textContent = text; return { text }; }
@@ -1047,7 +1097,7 @@
       const el = $("#nowplaying");
       if (!el) return { ok: false };
       const title = clean(p.title, 60);
-      if (!title) { el.dataset.show = "false"; el.classList.remove("playing"); return { ok: true, show: false }; }
+      if (!title) { el.dataset.show = "false"; el.classList.remove("playing"); npShare = ""; setNpQR(""); return { ok: true, show: false }; }
       const artist = clean(p.artist, 40);
       const who = clean(p.who, 40);
       const likes = clampNum(p.likes, 0, 1e6, 0) | 0;
@@ -1075,6 +1125,9 @@
         // the same cover as a dim, crossfading, drifting full-stage backdrop
         setStageCover(img);
       }
+      // QR to the exact Suno song — rebuilt only when the track actually changes
+      const share = typeof p.share === "string" && /^https:\/\/(?:www\.)?suno\.com\/\S+$/i.test(p.share) ? p.share : "";
+      if (share !== npShare) { npShare = share; setNpQR(share); }
       const set = (sel, txt) => { const n = el.querySelector(sel); if (n) n.textContent = txt; };
       set(".np-title", title);
       set(".np-artist", artist);
@@ -1086,7 +1139,9 @@
       const first = el.dataset.show !== "true";
       el.dataset.show = "true";
       el.classList.add("playing");
-      if (gsap && first) gsap.fromTo(el, { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" });
+      // entrance: rise + fade (NOT x — the panel is centered via margin-left, so
+      // animating x would knock it off-center)
+      if (gsap && first) gsap.fromTo(el, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" });
       return { ok: true, title, likes, queue };
     },
 
@@ -1105,6 +1160,49 @@
         b.style.height = (Math.max(0.08, Math.min(1, v)) * 100).toFixed(0) + "%";
       });
       return { ok: true, bands: bands || [] };
+    },
+
+    // ---- request queue strip ------------------------------------------------
+    // p.items: [{ title, artist, who, avatar }] in line order; p.count = total
+    // waiting (may exceed what's shown). Empty → hide the strip. Each item shows
+    // the requester's avatar + a position badge so a viewer can find their song.
+    setQueue(p = {}) {
+      const wrap = $("#queue");
+      if (!wrap) return { ok: false };
+      const list = wrap.querySelector(".q-list");
+      const items = Array.isArray(p.items) ? p.items : [];
+      const count = clampNum(p.count, 0, 9999, items.length) | 0;
+      if (!items.length) {
+        wrap.dataset.show = "false";
+        if (list) list.innerHTML = "";
+        return { ok: true, show: false };
+      }
+      const cnt = wrap.querySelector(".q-count");
+      if (cnt) cnt.textContent = String(count);
+      if (list) {
+        const MAX = 4; // keep the strip readable; the rest roll up into "+N"
+        list.innerHTML = "";
+        items.slice(0, MAX).forEach((it, i) => {
+          const item = document.createElement("div"); item.className = "q-item";
+          const avWrap = document.createElement("div"); avWrap.className = "q-av-wrap";
+          avWrap.appendChild(avatarEl(it.who, it.avatar, 34));
+          const pos = document.createElement("span"); pos.className = "q-pos"; pos.textContent = String(i + 1);
+          avWrap.appendChild(pos);
+          const title = document.createElement("div"); title.className = "q-title";
+          title.textContent = clean(it.title, 30) || "—";
+          item.append(avWrap, title);
+          list.appendChild(item);
+        });
+        if (count > MAX) {
+          const more = document.createElement("div"); more.className = "q-more";
+          more.textContent = "+" + (count - MAX);
+          list.appendChild(more);
+        }
+      }
+      const first = wrap.dataset.show !== "true";
+      wrap.dataset.show = "true";
+      if (gsap && first) gsap.fromTo(wrap, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" });
+      return { ok: true, count };
     },
 
     // standby / landing screen.

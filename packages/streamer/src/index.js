@@ -35,6 +35,7 @@ const ALLOWED_ACTIONS = new Set([
   "voteEnd",
   "setNowPlaying",
   "setEqLevels",
+  "setQueue",
   "setStandby",
   "setCountdown",
   "renderWarning",
@@ -126,7 +127,7 @@ function buildControlApp() {
   // queue a requested Suno share link (resolved + CDN-allowlisted by the DJ)
   app.post("/music/enqueue", async (req, res) => {
     if (!dj) return res.status(503).json({ ok: false, reason: "music off" });
-    const out = await dj.enqueue(String(req.body?.link || ""), String(req.body?.who || ""));
+    const out = await dj.enqueue(String(req.body?.link || ""), String(req.body?.who || ""), String(req.body?.avatar || ""));
     res.status(out.ok ? 200 : 400).json(out);
   });
   // like the currently-playing song (one per author per song)
@@ -428,6 +429,7 @@ async function main() {
       // pre-show has its own loop until the operator runs `live.sh onair`
       mode: config.standbyOnBoot ? "intro" : "live",
       onUpdate: (st) => { applyDirective({ action: "setNowPlaying", params: st }).catch(() => {}); },
+      onQueue: (q) => { applyDirective({ action: "setQueue", params: q }).catch(() => {}); },
       log: console.log,
     });
     dj.start().catch((e) => console.error("[dj] start failed:", e.message));

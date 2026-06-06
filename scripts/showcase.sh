@@ -32,7 +32,7 @@ HEADLINES=("Chat is in control" "Driven by the crowd" "Live and reactive"
            "Anything can happen" "Powered by comments" "Welcome to the stream")
 SUBS=("themes, effects, and motion on autopilot" "every element, shuffled"
       "a different look every minute" "premium but lightweight")
-KICKERS=("hyperframes live" "live from the lab" "now streaming" "on air" "powered by chat" "welcome in")
+KICKERS=("suno live stream" "fresh off suno" "now streaming" "on air" "powered by chat" "welcome in")
 GRAD_SPEEDS=(4 6 8 10 12)
 
 count=0
