@@ -81,6 +81,8 @@
   let coverLayer = 0;        // which full-stage cover layer is visible (0=a, 1=b)
   let npImg = "";            // current cover url (restart the drift only on track change)
   let npShare = "";          // current Suno share url (rebuild the QR only on track change)
+  let npTitle = "";          // current title text (re-run the marquee only on change)
+  let npTitleTween = null;   // the title scroll (marquee) timeline
   let countdownCalls = [];   // the running "going live" countdown's scheduled ticks
   // up-next queue strip: full list + which page is showing, so a long queue
   // (e.g. 20 songs) cycles through pages instead of silently hiding everything
@@ -162,42 +164,96 @@
     return null;
   }
   function setNpQR(url) {
-    const wrap = $(".np-qr"), holder = $(".np-qr-code");
-    if (!wrap || !holder) return;
+    const holder = $(".np-qr-code");
+    if (!holder) return;
+    // build the code (or clear it); the QR LAYER's visibility is handled by the
+    // cover⇄QR media cycle (restartNpMedia), not here.
     const q = url ? buildQR(url) : null;
-    if (!q) { wrap.dataset.show = "false"; holder.innerHTML = ""; return; }
-    // scalable SVG (viewBox only) → CSS sizes it; margin in modules (quiet zone)
-    holder.innerHTML = q.createSvgTag({ cellSize: 6, margin: 1, scalable: true });
-    wrap.dataset.show = "true";
+    holder.innerHTML = q ? q.createSvgTag({ cellSize: 6, margin: 1, scalable: true }) : "";
+  }
+
+  // ---- now-playing media cycle: the cover art and the QR are the same size, so
+  // they share one square and crossfade every NP_MEDIA_SECS. Cover shows first on
+  // each new track; if there's no QR (no share) we just leave the cover up.
+  const NP_MEDIA_SECS = 20;
+  let npMediaTimer = null;
+  let npShowingQR = false;
+  function showNpMedia(qr) {
+    npShowingQR = !!qr;
+    const art = $("#nowplaying .np-art"), q = $("#nowplaying .np-qr");
+    if (gsap) {
+      if (art) gsap.to(art, { opacity: qr ? 0 : 1, duration: 0.6, ease: "sine.inOut" });
+      if (q) gsap.to(q, { opacity: qr ? 1 : 0, duration: 0.6, ease: "sine.inOut" });
+    } else {
+      if (art) art.style.opacity = qr ? 0 : 1;
+      if (q) q.style.opacity = qr ? 1 : 0;
+    }
+  }
+  function stopNpMediaCycle() {
+    if (npMediaTimer) { npMediaTimer.kill ? npMediaTimer.kill() : clearTimeout(npMediaTimer); npMediaTimer = null; }
+  }
+  // (re)start on a track change: show the cover now; alternate with the QR every
+  // NP_MEDIA_SECS only when a QR exists for this song.
+  function restartNpMedia(hasQR) {
+    stopNpMediaCycle();
+    showNpMedia(false);
+    if (!hasQR) return;
+    const tick = () => {
+      showNpMedia(!npShowingQR);
+      npMediaTimer = gsap ? gsap.delayedCall(NP_MEDIA_SECS, tick) : setTimeout(tick, NP_MEDIA_SECS * 1000);
+    };
+    npMediaTimer = gsap ? gsap.delayedCall(NP_MEDIA_SECS, tick) : setTimeout(tick, NP_MEDIA_SECS * 1000);
+  }
+
+  // if the now-playing title is too long to fit, gently scroll it left to reveal
+  // the end, pause, then back — a ping-pong marquee so the full name is readable.
+  function marqueeNpTitle() {
+    const box = $("#nowplaying .np-title"), inner = $("#nowplaying .np-title-inner");
+    if (!box || !inner) return;
+    if (npTitleTween) { npTitleTween.kill(); npTitleTween = null; }
+    if (gsap) gsap.set(inner, { x: 0 });
+    const overflow = inner.scrollWidth - box.clientWidth;
+    if (!gsap || overflow <= 2) return; // fits → no scroll
+    const dur = Math.min(9, Math.max(3, overflow / 26));
+    npTitleTween = gsap.timeline({ repeat: -1 })
+      .to(inner, { x: -overflow, duration: dur, ease: "sine.inOut", delay: 1.8 })
+      .to(inner, { x: 0, duration: dur, ease: "sine.inOut", delay: 1.2 });
   }
 
   // ---- up-next queue strip --------------------------------------------------
-  const Q_WIN = 4;     // pills visible at once
+  const Q_WIN = 6;     // max tiles shown at once (deck grows right up to this; cycles beyond)
   const Q_CYCLE = 6;   // seconds between page rotations (only if the queue > Q_WIN)
   const safeImg = (u) => (typeof u === "string" && /^https:\/\/[^\s"')<>]+$/i.test(u) ? u : "");
-  // render the current window of pills, each tagged with its TRUE position in line
+  // render the current window as album-art tiles, each tagged with its TRUE line
+  // position + the requester's avatar, with the song name on up to 2 lines below
   function renderQueueWindow() {
     const list = $("#queue .q-list");
     if (!list) return;
     const n = qItems.length;
     list.innerHTML = "";
-    if (!n) return;
+    if (!n) {
+      const empty = document.createElement("div"); empty.className = "q-empty";
+      empty.textContent = "drop a Suno link in chat to queue a song";
+      list.appendChild(empty);
+      return;
+    }
     const win = Math.min(Q_WIN, n);
     for (let k = 0; k < win; k++) {
       const idx = (qStart + k) % n;
       const it = qItems[idx] || {};
       const item = document.createElement("div"); item.className = "q-item";
+      const thumb = document.createElement("div"); thumb.className = "q-thumb";
       const cover = safeImg(it.image);
-      if (cover) { const c = document.createElement("span"); c.className = "q-cover"; c.style.backgroundImage = `url("${cover}")`; item.appendChild(c); }
-      const avWrap = document.createElement("div"); avWrap.className = "q-av-wrap";
-      avWrap.appendChild(avatarEl(it.who, it.avatar, 34));
+      if (cover) thumb.style.backgroundImage = `url("${cover}")`;
       const pos = document.createElement("span"); pos.className = "q-pos"; pos.textContent = String(idx + 1); // true line position
-      avWrap.appendChild(pos);
-      const col = document.createElement("div"); col.className = "q-col";
-      const title = document.createElement("div"); title.className = "q-title"; title.textContent = clean(it.title, 30) || "—";
-      const who = document.createElement("div"); who.className = "q-who"; who.textContent = clean(it.who, 18) || "viewer";
-      col.append(title, who);
-      item.append(avWrap, col);
+      const avWrap = document.createElement("div"); avWrap.className = "q-av-wrap";
+      avWrap.appendChild(avatarEl(it.who, it.avatar, 26));
+      thumb.append(pos, avWrap);
+      const meta = document.createElement("div"); meta.className = "q-meta";
+      const title = document.createElement("div"); title.className = "q-title"; title.textContent = clean(it.title, 40) || "—";
+      const artist = document.createElement("div"); artist.className = "q-artist"; artist.textContent = clean(it.artist, 30) || "";
+      meta.append(title, artist);
+      item.append(thumb, meta);
       if (gsap) gsap.fromTo(item, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", delay: k * 0.05 });
       list.appendChild(item);
     }
@@ -937,7 +993,7 @@
         card.style.setProperty("--vip-photo", `url("${vipUrl}")`); // CSS composes photo + rainbow border
       }
       const accent = document.createElement("span"); accent.className = "accent";
-      const av = avatarEl(who, p.avatar, 42); av.classList.add("sc-avatar");
+      const av = avatarEl(who, p.avatar, 34); av.classList.add("sc-avatar");
       const col = document.createElement("div"); col.className = "sc-col";
       const whoEl = document.createElement("div"); whoEl.className = "who"; whoEl.textContent = who.toUpperCase();
       const msgEl = document.createElement("div"); msgEl.className = "msg"; msgEl.textContent = msg;
@@ -965,7 +1021,7 @@
       }
 
       const cards = wrap.querySelectorAll(".shoutout");
-      for (let i = 5; i < cards.length; i++) cards[i].remove();
+      for (let i = 8; i < cards.length; i++) cards[i].remove();
       return { ok: true, tier };
     },
 
@@ -1146,19 +1202,23 @@
     setNowPlaying(p = {}) {
       const el = $("#nowplaying");
       if (!el) return { ok: false };
+      const deck = $("#stagedeck");
       const title = clean(p.title, 60);
-      if (!title) { el.dataset.show = "false"; el.classList.remove("playing"); npShare = ""; setNpQR(""); return { ok: true, show: false }; }
+      if (!title) {
+        if (deck) deck.dataset.show = "false";
+        el.classList.remove("playing"); npShare = ""; setNpQR(""); stopNpMediaCycle();
+        npTitle = ""; if (npTitleTween) { npTitleTween.kill(); npTitleTween = null; }
+        return { ok: true, show: false };
+      }
       const artist = clean(p.artist, 40);
       const who = clean(p.who, 40);
       const likes = clampNum(p.likes, 0, 1e6, 0) | 0;
       const queue = clampNum(p.queue, 0, 1e6, 0) | 0;
-      // cover art (Suno og:image) — https-only, like avatars
+      // cover art (Suno og:image) — https-only, like avatars. This is one of the
+      // two crossfading media layers; its opacity is driven by the media cycle.
       const art = el.querySelector(".np-art");
       const img = typeof p.image === "string" && /^https:\/\/[^\s"')<>]+$/i.test(p.image) ? p.image : "";
-      if (art) {
-        if (img) { art.style.backgroundImage = `url("${img}")`; art.dataset.show = "true"; }
-        else { art.style.backgroundImage = ""; art.dataset.show = "false"; }
-      }
+      if (art) art.style.backgroundImage = img ? `url("${img}")` : "";
       // dim cover behind the card, with a slow Ken Burns drift — only (re)start
       // when the track's cover actually changes (not on every like/queue update)
       if (img !== npImg) {
@@ -1175,20 +1235,21 @@
         // the same cover as a dim, crossfading, drifting full-stage backdrop
         setStageCover(img);
       }
-      // QR to the exact Suno song — rebuilt only when the track actually changes
+      // QR to the exact Suno song — rebuilt only when the track actually changes,
+      // and that's also when we (re)start the cover⇄QR crossfade cycle
       const share = typeof p.share === "string" && /^https:\/\/(?:www\.)?suno\.com\/\S+$/i.test(p.share) ? p.share : "";
-      if (share !== npShare) { npShare = share; setNpQR(share); }
+      if (share !== npShare) { npShare = share; setNpQR(share); restartNpMedia(!!share); }
       const set = (sel, txt) => { const n = el.querySelector(sel); if (n) n.textContent = txt; };
-      set(".np-title", title);
+      set(".np-title-inner", title);
+      if (title !== npTitle) { npTitle = title; marqueeNpTitle(); } // re-scroll only when the song changes
       set(".np-artist", artist);
       set(".np-by", who ? "  ·  req by " + who : "");
       set(".np-like-count", String(likes));
-      const first = el.dataset.show !== "true";
-      el.dataset.show = "true";
       el.classList.add("playing");
-      // entrance: rise + fade (NOT x — the panel is centered via margin-left, so
-      // animating x would knock it off-center)
-      if (gsap && first) gsap.fromTo(el, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" });
+      // reveal the whole deck (now-playing + up-next) the first time a song lands
+      const first = deck && deck.dataset.show !== "true";
+      if (deck) deck.dataset.show = "true";
+      if (gsap && first && deck) gsap.fromTo(deck, { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" });
       return { ok: true, title, likes, queue };
     },
 
@@ -1219,16 +1280,16 @@
       if (!wrap) return { ok: false };
       const items = Array.isArray(p.items) ? p.items : [];
       const count = clampNum(p.count, 0, 9999, items.length) | 0;
-      if (!items.length) {
-        wrap.dataset.show = "false";
-        qItems = []; qSig = "";
-        if (qCycleTimer) { qCycleTimer.kill ? qCycleTimer.kill() : clearTimeout(qCycleTimer); qCycleTimer = null; }
-        const list = wrap.querySelector(".q-list"); if (list) list.innerHTML = "";
-        return { ok: true, show: false };
-      }
-      // header count: "N in queue" (singular-safe)
       const cnt = wrap.querySelector(".q-count");
       if (cnt) cnt.textContent = String(count);
+      // the Up Next section is always part of the deck — when empty it shows a
+      // hint (rendered by renderQueueWindow), so we don't hide it here.
+      if (!items.length) {
+        qItems = []; qSig = "";
+        if (qCycleTimer) { qCycleTimer.kill ? qCycleTimer.kill() : clearTimeout(qCycleTimer); qCycleTimer = null; }
+        renderQueueWindow();
+        return { ok: true, count: 0 };
+      }
       // only reset to the front of the line when the queue CONTENTS change — a
       // like/now-playing refresh shouldn't yank the cycle back to page 1
       const sig = items.map((i) => (i.title || "") + "|" + (i.who || "")).join("~");
@@ -1236,9 +1297,6 @@
       if (sig !== qSig) { qSig = sig; qStart = 0; }
       renderQueueWindow();
       startQueueCycle();
-      const first = wrap.dataset.show !== "true";
-      wrap.dataset.show = "true";
-      if (gsap && first) gsap.fromTo(wrap, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" });
       return { ok: true, count };
     },
 

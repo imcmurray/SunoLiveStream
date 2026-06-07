@@ -112,39 +112,44 @@
       <!-- subtle "current vibe" chip — the Collective Mood Engine's descriptor -->
       <div id="vibe" data-show="false"></div>
 
-      <!-- request queue (auto-DJ): when viewers drop Suno links in chat, show how
-           many are waiting + the line order, with each requester's profile pic so
-           people can spot where their song is. Sits just above the now-playing
-           strip; hidden whenever the queue is empty. -->
-      <div id="queue" data-show="false">
-        <div class="q-head">
-          <span class="q-label">Up Next</span>
-          <span class="q-sub"><span class="q-count">0</span> in queue</span>
-        </div>
-        <div class="q-list"></div>
-      </div>
-
-      <!-- main-stage now-playing showcase (auto-DJ): big cover + song/artist
-           details + a live like/queue meter, and a QR that opens the exact Suno
-           song so listeners can scan straight to the artist's page. -->
-      <div id="nowplaying" data-show="false">
-        <span class="np-bg" aria-hidden="true"></span>
-        <span class="np-art" data-show="false" aria-hidden="true"></span>
-        <div class="np-col">
+      <!-- the bottom "DJ deck": NOW PLAYING (left) + UP NEXT (right) read as one
+           bar. Up Next uses album-art TILES (not text cards) so it's never
+           confused with the comment feed on the right. Hidden until a song plays. -->
+      <div id="stagedeck" data-show="false">
+        <!-- NOW PLAYING (left): label on top, then cover-art ⇄ scan-QR media + song -->
+        <div id="nowplaying">
+          <span class="np-bg" aria-hidden="true"></span>
           <div class="np-eyebrow">
             <span class="np-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
             <span class="np-nowtag">NOW PLAYING</span>
           </div>
-          <div class="np-title">—</div>
-          <div class="np-sub"><span class="np-artist"></span><span class="np-by"></span></div>
-          <div class="np-stats">
-            <span class="np-likes">♥ <span class="np-like-count">0</span></span>
-            <span class="np-suno">♪ Made with Suno</span>
+          <div class="np-body">
+            <!-- cover art and the scan-to-open QR are the same size, so they share
+                 ONE square and crossfade every ~20s (see scene.js). -->
+            <div class="np-media">
+              <span class="np-art" aria-hidden="true"></span>
+              <div class="np-qr" aria-hidden="true">
+                <div class="np-qr-code"></div>
+                <div class="np-qr-cap">OPEN IN SUNO</div>
+              </div>
+            </div>
+            <div class="np-col">
+              <div class="np-title"><span class="np-title-inner">—</span></div>
+              <div class="np-sub"><span class="np-artist"></span><span class="np-by"></span></div>
+              <div class="np-stats">
+                <span class="np-likes">♥ <span class="np-like-count">0</span></span>
+                <span class="np-suno">♪ Made with Suno</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="np-qr" data-show="false">
-          <div class="np-qr-code" aria-hidden="true"></div>
-          <div class="np-qr-label">SCAN TO OPEN IN SUNO</div>
+        <!-- UP NEXT (right): album-art tiles in line order; #1 is the next song -->
+        <div id="queue" data-show="false">
+          <div class="q-head">
+            <span class="q-label">Up Next</span>
+            <span class="q-sub"><span class="q-count">0</span> in queue</span>
+          </div>
+          <div class="q-list"></div>
         </div>
       </div>
 

@@ -334,24 +334,24 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
    "what people are saying" column down the right. Bounded so it never reaches
    the Up Next rail along the bottom. Newest on top; older ones fade out below. */
 #shoutouts {
-  position: absolute; right: 32px; top: 96px; z-index: 5;
-  display: flex; flex-direction: column; gap: 9px; align-items: flex-end; width: 384px;
-  max-height: 320px; overflow: hidden;
+  position: absolute; right: 36px; top: 36px; z-index: 8;
+  display: flex; flex-direction: column; gap: 8px; align-items: flex-end; width: 360px;
+  max-height: 440px; overflow: hidden; /* grows down the right; deck sits below it */
 }
 .shoutout {
   position: relative; width: 100%; overflow: hidden;
-  display: flex; align-items: center; gap: 12px;
-  border-radius: 16px; padding: 10px 18px 10px 22px;
-  background: linear-gradient(135deg, rgba(16,12,32,0.82), rgba(10,8,22,0.72));
+  display: flex; align-items: center; gap: 10px;
+  border-radius: 14px; padding: 8px 14px 8px 18px;
+  background: linear-gradient(135deg, rgba(16,12,32,0.84), rgba(10,8,22,0.74));
   border: 1px solid rgba(255,255,255,0.12);
-  box-shadow: 0 14px 44px rgba(0,0,0,0.5);
+  box-shadow: 0 10px 32px rgba(0,0,0,0.5);
   will-change: transform, opacity;
 }
 .shoutout .accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c3); }
-.shoutout .sc-avatar { width: 42px; height: 42px; }
+.shoutout .sc-avatar { width: 34px; height: 34px; }
 .shoutout .sc-col { display: flex; flex-direction: column; min-width: 0; }
-.shoutout .who { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.72; }
-.shoutout .msg { font-size: 20px; font-weight: 600; margin-top: 4px; }
+.shoutout .who { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; opacity: 0.7; }
+.shoutout .msg { font-size: 15px; font-weight: 600; margin-top: 2px; }
 .shoutout.tier-small  .accent { background: var(--c3); }
 .shoutout.tier-medium .accent { background: var(--c1); }
 .shoutout.tier-medium { background: linear-gradient(135deg, rgba(40,10,40,0.84), rgba(18,8,30,0.74)); }
@@ -428,7 +428,7 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
 
 /* ============================== misc ==================================== */
 #status {
-  position: absolute; left: 16px; bottom: 70px; z-index: 9;
+  position: absolute; left: 16px; top: 16px; z-index: 9;
   font-size: 12px; font-family: "Liberation Mono", monospace;
   padding: 4px 10px; border-radius: 6px;
   background: rgba(0,0,0,0.5); color: #9affd0; border: 1px solid rgba(154,255,208,0.3);
@@ -484,42 +484,45 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
 }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* main-stage now-playing showcase (auto-DJ) — a wide, song-forward panel
-   anchored bottom-center: big cover, song + artist details, a live like/queue
-   meter, and a QR that opens the exact Suno song. Centered with margin math (not
-   translateX) so the GSAP entrance can animate y/opacity without fighting the
-   centering transform. */
-#nowplaying {
-  position: absolute; left: 50%; margin-left: -380px; bottom: 40px; z-index: 7;
-  width: 760px; box-sizing: border-box;
-  display: flex; align-items: center; gap: 22px;
-  padding: 18px 22px; border-radius: 20px;
+/* the bottom "DJ deck": NOW PLAYING (left) + UP NEXT (right) read as one bar.
+   Anchored bottom-left; stops short of the right-edge comment feed. */
+#stagedeck {
+  position: absolute; left: 40px; bottom: 40px; z-index: 7;
+  max-width: 1200px; box-sizing: border-box;
+  display: inline-flex; align-items: stretch; /* shrink/grow to content → Up Next grows right as the queue grows */
+  border-radius: 20px; overflow: hidden;
   background: linear-gradient(135deg, rgba(14,10,30,0.9), rgba(8,6,20,0.82));
   border: 1px solid color-mix(in srgb, var(--c3) 40%, rgba(255,255,255,0.12));
   box-shadow: 0 18px 54px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
   will-change: transform, opacity;
-  overflow: hidden; /* clip the drifting cover layer to the panel */
 }
-#nowplaying[data-show="false"] { display: none; }
+#stagedeck[data-show="false"] { display: none; }
+
+/* NOW PLAYING — left section of the deck (wide): label on top, then a media slot
+   (cover art ⇄ scan QR, crossfading) beside the song/artist details. */
+#nowplaying {
+  position: relative; flex: 0 0 580px; box-sizing: border-box; overflow: hidden;
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 20px;
+}
 #nowplaying > *:not(.np-bg) { position: relative; z-index: 1; } /* content above the cover */
 /* dim, blurred cover behind the content — slowly drifts (Ken Burns) */
 .np-bg {
   position: absolute; inset: -10%; z-index: 0; pointer-events: none;
   background-size: cover; background-position: center;
   opacity: 0.22; filter: blur(4px) saturate(1.15); will-change: transform;
-  /* fade the cover in from both ends so the central text stays clean */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
-          mask-image: linear-gradient(90deg, transparent 0%, #000 30%, #000 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 55%, transparent 100%);
+          mask-image: linear-gradient(90deg, #000 0%, #000 55%, transparent 100%);
 }
-/* cover art (Suno og:image) — the hero album thumbnail */
+.np-eyebrow { display: flex; align-items: center; gap: 11px; }
+.np-body { display: flex; align-items: center; gap: 16px; flex: 1 1 auto; }
+/* the shared media square — cover art and QR crossfade in here */
+.np-media { position: relative; width: 104px; height: 104px; flex: 0 0 auto; }
 .np-art {
-  width: 128px; height: 128px; flex: 0 0 auto; border-radius: 16px;
-  background-size: cover; background-position: center;
+  position: absolute; inset: 0; border-radius: 16px;
+  background-size: cover; background-position: center; background-color: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.18); box-shadow: 0 8px 24px rgba(0,0,0,0.55);
 }
-.np-art[data-show="false"] { display: none; }
-.np-col { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 5px; }
-.np-eyebrow { display: flex; align-items: center; gap: 11px; }
+.np-col { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; gap: 6px; }
 .np-nowtag {
   font-size: 13px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase;
   color: var(--c3); text-shadow: 0 0 12px color-mix(in srgb, var(--c3) 50%, transparent);
@@ -537,74 +540,74 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
 /* reactive: heights set live from the music; CSS transition smooths between
    the ~18fps updates so motion stays fluid */
 #nowplaying.reactive .np-eq i { animation: none; transition: height 0.045s linear; }
-.np-title { font-size: 30px; font-weight: 800; letter-spacing: 0.005em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
-.np-sub { font-size: 18px; color: rgba(255,255,255,0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 440px; }
+/* the title clips; its inner span scrolls (marquee) when the name is too long */
+.np-title { font-size: 27px; font-weight: 800; letter-spacing: 0.005em; color: #fff; white-space: nowrap; overflow: hidden; max-width: 420px; }
+.np-title-inner { display: inline-block; white-space: nowrap; will-change: transform; }
+.np-sub { font-size: 16px; color: rgba(255,255,255,0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
 .np-sub .np-artist { font-weight: 600; color: #fff; }
 .np-sub .np-by { color: color-mix(in srgb, var(--c3) 80%, #fff); }
-.np-stats { display: flex; align-items: center; gap: 18px; margin-top: 3px; }
+.np-stats { display: flex; align-items: center; gap: 16px; margin-top: 4px; }
 .np-likes { font-size: 16px; font-weight: 700; color: #ff5e87; text-shadow: 0 0 12px rgba(255,94,135,0.5); white-space: nowrap; }
-.np-queue { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.6); white-space: nowrap; }
-.np-queue[data-show="false"] { display: none; }
 .np-suno { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: rgba(255,255,255,0.55); white-space: nowrap; }
-/* QR panel — a scannable code that opens the exact Suno song page */
-.np-qr { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 0 0 auto; }
-.np-qr[data-show="false"] { display: none; }
-.np-qr-code {
-  width: 116px; height: 116px; box-sizing: border-box; padding: 8px;
-  background: #fff; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+/* QR layer — a white card (with code + a tiny caption) that crossfades with the
+   cover art in the shared .np-media square; opacity is driven by scene.js */
+.np-qr {
+  position: absolute; inset: 0; opacity: 0; box-sizing: border-box;
+  display: flex; flex-direction: column; padding: 8px 8px 5px;
+  background: #fff; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.55);
 }
+.np-qr-code { flex: 1 1 auto; min-height: 0; }
 .np-qr-code svg { display: block; width: 100%; height: 100%; }
-.np-qr-label {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
-  color: rgba(255,255,255,0.82); text-align: center; max-width: 124px; line-height: 1.3;
+.np-qr-cap {
+  flex: 0 0 auto; text-align: center; padding-top: 3px;
+  font-size: 9px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #0c0820;
 }
 
-/* request queue strip — centered just above the now-playing panel, same width
-   so the two read as one stacked unit. Shows the line order left→right with the
-   requester's avatar (+ a position badge) so a viewer can spot their own song. */
+/* UP NEXT — right section of the deck: album-art TILES in line order (#1 = next).
+   Tiles (pictures), not text rows, so it never reads like the comment feed. */
 #queue {
-  position: absolute; left: 50%; margin-left: -380px; bottom: 226px; z-index: 6;
-  width: 760px; box-sizing: border-box;
-  display: flex; align-items: center; gap: 18px;
-  padding: 12px 18px; border-radius: 18px;
-  background: linear-gradient(135deg, rgba(14,10,30,0.82), rgba(8,6,20,0.72));
-  border: 1px solid color-mix(in srgb, var(--c1) 34%, rgba(255,255,255,0.1));
-  box-shadow: 0 14px 40px rgba(0,0,0,0.5);
-  will-change: transform, opacity;
+  position: relative; flex: 1 1 auto; min-width: 0; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 10px; padding: 16px 18px;
+  border-left: 1px solid rgba(255,255,255,0.1);
 }
-#queue[data-show="false"] { display: none; }
-.q-head { display: flex; flex-direction: column; flex: 0 0 auto; line-height: 1.2; }
+.q-head { display: flex; align-items: baseline; gap: 8px; flex: 0 0 auto; }
 .q-label { font-size: 13px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--c1); text-shadow: 0 0 12px color-mix(in srgb, var(--c1) 45%, transparent); }
-.q-sub { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 2px; }
+.q-sub { font-size: 12px; color: rgba(255,255,255,0.6); }
 .q-count { color: #fff; font-weight: 800; }
-.q-list { display: flex; align-items: center; gap: 11px; flex: 1 1 auto; min-width: 0; }
-/* each waiting song = a pill with its OWN cover art behind it (dimmed), the
-   requester's avatar + true line position, and the song + who. Pills share the
-   rail evenly so the panel always reads as a full strip. */
-.q-item {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 10px; flex: 1 1 0; min-width: 0;
-  height: 58px; padding: 0 12px 0 8px; border-radius: 14px;
-  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+.q-list { display: flex; align-items: flex-start; gap: 12px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+/* a tile: cover art on top (line-position badge + requester avatar pinned to
+   its corners), then the song name on up to 2 lines below */
+.q-item { flex: 0 0 auto; width: 84px; display: flex; flex-direction: column; gap: 7px; }
+.q-thumb {
+  position: relative; width: 84px; height: 84px; border-radius: 12px;
+  background-size: cover; background-position: center; background-color: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 4px 14px rgba(0,0,0,0.5);
 }
-.q-cover { position: absolute; inset: 0; z-index: 0; background-size: cover; background-position: center; opacity: 0.82; }
-.q-item::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(90deg, rgba(8,6,20,0.88) 0%, rgba(8,6,20,0.5) 42%, rgba(8,6,20,0.12) 100%); }
-.q-item > * { position: relative; z-index: 2; }
-.q-av-wrap { position: relative; flex: 0 0 auto; }
 .q-pos {
-  position: absolute; right: -3px; bottom: -3px;
-  min-width: 16px; height: 16px; padding: 0 3px; box-sizing: border-box;
+  position: absolute; top: -6px; left: -6px;
+  min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
   display: flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 800; color: #0c0820;
-  background: var(--c1); border-radius: 999px; border: 1.5px solid rgba(10,8,24,0.9);
+  font-size: 11px; font-weight: 800; color: #0c0820;
+  background: var(--c1); border-radius: 999px; border: 1.5px solid rgba(10,8,24,0.95);
 }
-.q-col { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-.q-title { font-size: 13px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
-.q-who { font-size: 11px; color: rgba(255,255,255,0.72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
+.q-av-wrap { position: absolute; right: -6px; bottom: -6px; }
+.q-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.q-title {
+  font-size: 12px; font-weight: 700; line-height: 1.2; color: rgba(255,255,255,0.94);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  max-height: 2.4em; text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+.q-artist {
+  font-size: 11px; font-weight: 500; line-height: 1.2; color: rgba(255,255,255,0.62);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+/* shown in the Up Next section when nothing is queued yet */
+.q-empty { align-self: center; margin: auto 0; font-size: 13px; line-height: 1.4; color: rgba(255,255,255,0.5); }
 
-/* "current vibe" chip — quiet, glowing, lower-left mood caption (above now-playing) */
+/* "current vibe" chip — quiet, glowing mood caption in the open left space
+   just above the deck */
 #vibe {
-  position: absolute; left: 96px; bottom: 124px; z-index: 6;
+  position: absolute; left: 48px; bottom: 244px; z-index: 6;
   font-size: 15px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
   color: var(--c3); opacity: 0.85; white-space: nowrap;
   text-shadow: 0 0 14px color-mix(in srgb, var(--c3) 45%, transparent);
