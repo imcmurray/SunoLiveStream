@@ -574,7 +574,9 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
 .q-label { font-size: 13px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--c1); text-shadow: 0 0 12px color-mix(in srgb, var(--c1) 45%, transparent); }
 .q-sub { font-size: 12px; color: rgba(255,255,255,0.6); }
 .q-count { color: #fff; font-weight: 800; }
-.q-list { display: flex; align-items: flex-start; gap: 12px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+/* overflow visible so the position badge (which pokes above each tile) isn't
+   clipped; the deck's own overflow:hidden still clips the advance-slide. */
+.q-list { display: flex; align-items: flex-start; gap: 12px; flex: 1 1 auto; min-width: 0; overflow: visible; }
 /* a tile: cover art on top (line-position badge + requester avatar pinned to
    its corners), then the song name on up to 2 lines below */
 .q-item { flex: 0 0 auto; width: 84px; display: flex; flex-direction: column; gap: 7px; }
