@@ -603,6 +603,13 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
 }
 /* shown in the Up Next section when nothing is queued yet */
 .q-empty { align-self: center; margin: auto 0; font-size: 13px; line-height: 1.4; color: rgba(255,255,255,0.5); }
+/* the flying cover used in the queue-advance animation: a clone of the next
+   song's art that travels from the first Up Next tile into the now-playing slot */
+.fly-cover {
+  position: absolute; z-index: 9; border-radius: 14px; pointer-events: none;
+  background-size: cover; background-position: center;
+  border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}
 
 /* "current vibe" chip — quiet, glowing mood caption in the open left space
    just above the deck */

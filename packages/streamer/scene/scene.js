@@ -226,7 +226,7 @@
   const safeImg = (u) => (typeof u === "string" && /^https:\/\/[^\s"')<>]+$/i.test(u) ? u : "");
   // render the current window as album-art tiles, each tagged with its TRUE line
   // position + the requester's avatar, with the song name on up to 2 lines below
-  function renderQueueWindow() {
+  function renderQueueWindow(stagger = true) {
     const list = $("#queue .q-list");
     if (!list) return;
     const n = qItems.length;
@@ -254,7 +254,7 @@
       const artist = document.createElement("div"); artist.className = "q-artist"; artist.textContent = clean(it.artist, 30) || "";
       meta.append(title, artist);
       item.append(thumb, meta);
-      if (gsap) gsap.fromTo(item, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", delay: k * 0.05 });
+      if (gsap && stagger) gsap.fromTo(item, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out", delay: k * 0.05 });
       list.appendChild(item);
     }
   }
@@ -269,6 +269,42 @@
       qCycleTimer = gsap ? gsap.delayedCall(Q_CYCLE, tick) : setTimeout(tick, Q_CYCLE * 1000);
     };
     qCycleTimer = gsap ? gsap.delayedCall(Q_CYCLE, tick) : setTimeout(tick, Q_CYCLE * 1000);
+  }
+  // ---- queue-advance animation ---------------------------------------------
+  // when the playing song ends, the next song "moves over" into the now-playing
+  // slot while the rest of the queue slides one place left. The fly is a cosmetic
+  // clone over the top of #stage; the real DOM is already correct underneath, so
+  // a hiccup can never leave the scene stuck.
+  // we can play it when the new now-playing song was the FRONT of the queue
+  // (qItems[0]) AND the front page is showing (qStart === 0, so tile #1 == qItems[0]).
+  function isQueueAdvance(newShare) {
+    return !!(gsap && qStart === 0 && newShare && qItems[0] && qItems[0].share === newShare);
+  }
+  // fly a clone of the next song's cover from the first Up Next tile → np media
+  function flyCoverToNowPlaying(coverUrl) {
+    const stage = $("#stage");
+    const firstThumb = $("#queue .q-item .q-thumb");
+    const media = $("#nowplaying .np-media");
+    if (!stage || !firstThumb || !media) return;
+    const s = stage.getBoundingClientRect();
+    const a = firstThumb.getBoundingClientRect();
+    const b = media.getBoundingClientRect();
+    if (!a.width || !b.width) return; // deck hidden / not laid out → skip
+    const clone = document.createElement("div");
+    clone.className = "fly-cover";
+    if (safeImg(coverUrl)) clone.style.backgroundImage = `url("${coverUrl}")`;
+    clone.style.left = (a.left - s.left) + "px";
+    clone.style.top = (a.top - s.top) + "px";
+    clone.style.width = a.width + "px";
+    clone.style.height = a.height + "px";
+    stage.appendChild(clone);
+    gsap.set(media, { opacity: 0 }); // empty the destination so the clone lands INTO it
+    const reveal = () => { if (clone.parentNode) clone.remove(); gsap.to(media, { opacity: 1, duration: 0.25, ease: "power2.out" }); };
+    gsap.to(clone, {
+      left: b.left - s.left, top: b.top - s.top, width: b.width, height: b.height,
+      duration: 0.62, ease: "power3.inOut", onComplete: reveal,
+    });
+    gsap.delayedCall(1.3, () => { clone.parentNode && clone.remove(); gsap.set(media, { opacity: 1 }); }); // safety
   }
   function voteShow(on) {
     const el = $("#vote");
@@ -1238,7 +1274,14 @@
       // QR to the exact Suno song — rebuilt only when the track actually changes,
       // and that's also when we (re)start the cover⇄QR crossfade cycle
       const share = typeof p.share === "string" && /^https:\/\/(?:www\.)?suno\.com\/\S+$/i.test(p.share) ? p.share : "";
-      if (share !== npShare) { npShare = share; setNpQR(share); restartNpMedia(!!share); }
+      if (share !== npShare) {
+        // is this the queue advancing (the next song stepping up)? capture it
+        // BEFORE we mutate qItems, so the fly uses the outgoing first tile.
+        const advancing = isQueueAdvance(share);
+        const advCover = advancing && qItems[0] ? qItems[0].image : "";
+        npShare = share; setNpQR(share); restartNpMedia(!!share);
+        if (advancing) flyCoverToNowPlaying(advCover);
+      }
       const set = (sel, txt) => { const n = el.querySelector(sel); if (n) n.textContent = txt; };
       set(".np-title-inner", title);
       if (title !== npTitle) { npTitle = title; marqueeNpTitle(); } // re-scroll only when the song changes
@@ -1293,9 +1336,17 @@
       // only reset to the front of the line when the queue CONTENTS change — a
       // like/now-playing refresh shouldn't yank the cycle back to page 1
       const sig = items.map((i) => (i.title || "") + "|" + (i.who || "")).join("~");
+      // queue advanced? (new list == old list with the front removed, front page
+      // showing) → slide the tiles one place left instead of snapping
+      const advanced = gsap && qStart === 0 && qItems.length >= 2 && items.length === qItems.length - 1
+        && items[0] && qItems[1] && items[0].share && items[0].share === qItems[1].share;
       qItems = items;
       if (sig !== qSig) { qSig = sig; qStart = 0; }
-      renderQueueWindow();
+      renderQueueWindow(!advanced); // skip the per-tile stagger during the slide
+      if (advanced) {
+        const list = $("#queue .q-list");
+        if (list) gsap.fromTo(list, { x: 96 }, { x: 0, duration: 0.55, ease: "power3.out" }); // 84 tile + 12 gap
+      }
       startQueueCycle();
       return { ok: true, count };
     },
