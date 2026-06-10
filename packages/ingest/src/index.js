@@ -16,6 +16,7 @@ import { createMusic, parseSunoShare, isLikeCommand, hasHeart } from "./music.js
 import { simulatorSource, liveSimulatorSource } from "./simulator.js";
 import { youtubeSource } from "./youtube.js";
 import { createStreamLikes } from "./stream-likes.js";
+import { fetchT } from "./fetch-timeout.js";
 
 const moderator = createModerator();
 const director = createDirector();
@@ -39,7 +40,7 @@ async function audit(entry) {
 }
 
 async function postMutate(directive) {
-  const res = await fetch(config.mutateUrl, {
+  const res = await fetchT(config.mutateUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(directive),

@@ -2,6 +2,8 @@
 // current song) and forward to the streamer's music control plane. The link is
 // only PARSED here; the streamer resolves + CDN-allowlists it before playing.
 
+import { fetchT } from "./fetch-timeout.js";
+
 // accept BOTH Suno link forms: the /s/ short share link AND the /song/<uuid>
 // song-page URL (what the address bar / "copy link" gives). The streamer resolves
 // + CDN-allowlists either before it ever reaches the player.
@@ -19,7 +21,7 @@ export function hasHeart(text) { return HEART_RE.test(String(text ?? "")); }
 export function createMusic({ baseUrl }) {
   async function post(path, body) {
     try {
-      const r = await fetch(baseUrl + path, {
+      const r = await fetchT(baseUrl + path, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),

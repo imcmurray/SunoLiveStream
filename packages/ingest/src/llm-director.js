@@ -10,6 +10,7 @@
 // what it wants and the model picks the right directive."
 
 import { config } from "./config.js";
+import { fetchT } from "./fetch-timeout.js";
 
 export const THEMES = [
   "synthwave", "sunrise", "mono", "forest", "aurora", "ember",
@@ -132,7 +133,7 @@ function userContent(comment) {
  */
 export async function llmIntent(comment) {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetchT("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",

@@ -13,6 +13,7 @@ import path from "node:path";
 import { config } from "./config.js";
 import { getAccessToken } from "./youtube-auth.js";
 import { bill, unitsSpent, loadUsage } from "./quota.js";
+import { fetchT } from "./fetch-timeout.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // NB: control/ is root-owned (the streamer container writes there), so the
@@ -54,7 +55,7 @@ export async function discoverActiveBroadcast(token) {
   url.searchParams.set("part", "snippet");
   url.searchParams.set("broadcastStatus", "active");
   url.searchParams.set("broadcastType", "all");
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } });
   await bill(1); // liveBroadcasts.list ≈ 1 unit
   if (!res.ok) throw new Error(`liveBroadcasts.list http ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const j = await res.json();
@@ -73,7 +74,7 @@ async function liveChatForVideoId(token, videoId) {
   const url = new URL("https://www.googleapis.com/youtube/v3/liveBroadcasts");
   url.searchParams.set("part", "snippet");
   url.searchParams.set("id", videoId);
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } });
   await bill(1);
   if (!res.ok) throw new Error(`liveBroadcasts.list(id) http ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const j = await res.json();
@@ -145,9 +146,9 @@ export async function* youtubeSource() {
 
     let data;
     try {
-      let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      let res = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } });
       await bill(CHAT_UNITS); // a liveChatMessages.list call (~5 units)
-      if (res.status === 401) { token = await getAccessToken(true); res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } }); await bill(CHAT_UNITS); }
+      if (res.status === 401) { token = await getAccessToken(true); res = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } }); await bill(CHAT_UNITS); }
       if (res.status === 400 && pageToken) { // a stale/expired pageToken → start fresh
         console.log("[youtube] saved cursor rejected — starting fresh (skipping backlog)");
         pageToken = ""; first = true; continue;

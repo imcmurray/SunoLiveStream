@@ -66,6 +66,9 @@ stop() {
 start() {
   local vid="${1:-${YT_VIDEO_ID:-}}"   # optional: pin a stream by URL or video id
   stop >/dev/null            # guarantee single instance
+  # rotate the previous run's log (one generation) so a long-lived setup can't
+  # grow the log unbounded across restarts; the prior run stays inspectable
+  [ -f "$LOG" ] && mv -f "$LOG" "$LOG.1" 2>/dev/null
   echo "[live] starting YouTube-chat ingest → $MUTATE_URL  (log: $LOG)"
   [ -n "$vid" ] && echo "[live] pinning ingest to stream: $vid"
   nohup env \
@@ -125,18 +128,19 @@ show_state() {
   esac
 }
 
-# pretty-print whatever's playing (title/artist/requester/likes/queue/cover)
+# pretty-print whatever's playing (title/artist/requester/likes/queue/cover).
+# Parsed with node, not grep — titles/artists are user text and can contain
+# quotes/escapes that regex extraction would mangle.
 now_playing() {
-  local j title artist who likes queue cover
-  j=$(curl -s "$CONTROL/music/status" 2>/dev/null)
-  title=$(echo "$j" | grep -oE '"title":"[^"]*"' | sed 's/"title":"//;s/"$//')
-  [ -z "$title" ] && { echo "(nothing playing)"; return; }
-  artist=$(echo "$j" | grep -oE '"artist":"[^"]*"' | sed 's/"artist":"//;s/"$//')
-  who=$(echo "$j" | grep -oE '"who":"[^"]*"' | sed 's/"who":"//;s/"$//')
-  likes=$(echo "$j" | grep -oE '"likes":[0-9]+' | grep -oE '[0-9]+')
-  queue=$(echo "$j" | grep -oE '"queue":[0-9]+' | grep -oE '[0-9]+')
-  echo "$j" | grep -q '"image":"https' && cover="cover ✓" || cover="no cover"
-  echo "♪ $title — $artist   ${who:+(req $who) }♥ ${likes:-0}  ▶ ${queue:-0} queued  $cover"
+  curl -s "$CONTROL/music/status" 2>/dev/null | node -e '
+    let s = ""; process.stdin.on("data", d => s += d).on("end", () => { try {
+      const j = JSON.parse(s);
+      if (!j.title) { console.log("(nothing playing)"); return; }
+      const who = j.who ? `(req ${j.who}) ` : "";
+      const cover = /^https:/.test(j.image || "") ? "cover ✓" : "no cover";
+      console.log(`♪ ${j.title} — ${j.artist}   ${who}♥ ${j.likes || 0}  ▶ ${j.queue || 0} queued  ${cover}`);
+    } catch (e) { console.log("(nothing playing)"); } });
+  '
 }
 
 # today's YouTube API usage vs the daily cap + our cutoff (read from the ingest)

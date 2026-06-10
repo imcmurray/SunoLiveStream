@@ -10,6 +10,7 @@
 import "./load-env.js"; // must precede config.js so OAuth secrets are in process.env
 import http from "node:http";
 import { config } from "./config.js";
+import { fetchT } from "./fetch-timeout.js";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -25,7 +26,7 @@ export async function getAccessToken(force = false) {
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error("YouTube OAuth needs YT_CLIENT_ID + YT_CLIENT_SECRET + YT_REFRESH_TOKEN — run: node packages/ingest/src/youtube-auth.js");
   }
-  const res = await fetch(TOKEN_URL, {
+  const res = await fetchT(TOKEN_URL, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),

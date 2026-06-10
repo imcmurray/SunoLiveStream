@@ -156,11 +156,16 @@ function buildControlApp() {
   // go ON AIR: run the on-screen countdown, then reveal the show + switch the DJ
   // from intro music to the live queue. The timing lives here (not the operator's
   // shell) so the visual countdown and the music handoff stay in lock-step.
+  // A re-trigger restarts the countdown cleanly (the scene restarts its ticks;
+  // we cancel the pending reveal so the first call's timer can't fire early).
+  let onairTimer = null;
   app.post("/onair", async (req, res) => {
     const secs = Math.max(3, Math.min(30, Number(req.body?.seconds) || 10));
+    if (onairTimer) clearTimeout(onairTimer);
     await applyDirective({ action: "setCountdown", params: { seconds: secs } }).catch(() => {});
     res.json({ ok: true, seconds: secs });
-    setTimeout(() => {
+    onairTimer = setTimeout(() => {
+      onairTimer = null;
       applyDirective({ action: "setStandby", params: { mode: "off" } }).catch(() => {});
       if (dj) dj.setMode("live"); // fades intro out → first queued/rotation track up
     }, secs * 1000);

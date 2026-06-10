@@ -80,7 +80,6 @@ export const config = {
     // 10k units/day cap.) We never poll faster than YouTube's pollingIntervalMillis.
     pollActiveMs: num(process.env.YT_POLL_ACTIVE_MS, 8000),  // when messages are flowing
     pollIdleMs: num(process.env.YT_POLL_IDLE_MS, 60000),     // ramps to this when quiet
-    minPollMs: num(process.env.YT_MIN_POLL_MS, 8000),        // absolute floor (legacy)
     // Safety: stop polling once we've spent this many quota units today, so we
     // can't exceed the daily cap. Resets at midnight Pacific (YouTube's reset).
     quotaLimit: num(process.env.YT_QUOTA_LIMIT, 9000),

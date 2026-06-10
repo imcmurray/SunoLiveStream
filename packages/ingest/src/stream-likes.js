@@ -11,6 +11,7 @@ import { config } from "./config.js";
 import { getAccessToken } from "./youtube-auth.js";
 import { discoverActiveBroadcast } from "./youtube.js";
 import { bill, unitsSpent } from "./quota.js";
+import { fetchT } from "./fetch-timeout.js";
 
 const STATE_FILE = process.env.YT_LIKES_FILE || "./state/yt-likes.json";
 
@@ -64,9 +65,9 @@ export function createStreamLikes({ postMutate, log = () => {} }) {
     const url = new URL("https://www.googleapis.com/youtube/v3/videos");
     url.searchParams.set("part", "statistics");
     url.searchParams.set("id", videoId);
-    let res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    let res = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } });
     await bill(1); // videos.list ≈ 1 unit
-    if (res.status === 401) { token = await getAccessToken(true); res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } }); await bill(1); }
+    if (res.status === 401) { token = await getAccessToken(true); res = await fetchT(url, { headers: { Authorization: `Bearer ${token}` } }); await bill(1); }
     if (!res.ok) { log(`[likes] videos.list http ${res.status}`); return; }
 
     const item = (await res.json()).items?.[0];

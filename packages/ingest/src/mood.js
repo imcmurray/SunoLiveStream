@@ -9,6 +9,7 @@
 // is deferred), though setMood already supports it for a later phase.
 
 import { config } from "./config.js";
+import { fetchT } from "./fetch-timeout.js";
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const pick = (a) => a[(Math.random() * a.length) | 0];
@@ -88,7 +89,7 @@ Keep it tasteful and drifting — small moves from the current mood. Map hype→
 
 async function llmMood(snap, last) {
   try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetchT("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": config.anthropicKey, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
