@@ -28,9 +28,20 @@ kernel underneath.
 - Moderated chat becomes **scene directives** (`{action, params}`) against an
   allow-list — viewer input is only ever *arguments* to pre-vetted actions, never
   markup or code.
+- Viewer influence climbs a **three-tier mutation ladder**: `mutateElement` ops
+  against a stage element manifest → Claude-authored **viewer cards**, rendered
+  in a no-script iframe sandbox behind a **vision safety gate** → full-stage
+  **takeovers** with a hard TTL.
 - The crowd drives the atmosphere: per-song **hearts** (persist across replays),
   theme **votes**, a **Mood Engine**, instant **reactions**, **Super-Chat** tiers,
   and **stream-like milestones**.
+- **Super-Chat recognition**: paid messages get tiered on-screen celebration
+  (golden card over the stage) and pin to the mod console's **callout tray**
+  until the host thanks the sender on air.
+- **Automations** bind events to animations (builtin + custom), rehearsable on
+  an **off-air preview twin** of the scene before they ever touch the broadcast.
+- A **mod console** (screenshot below) runs the whole show from one screen —
+  moderation, transport, monitors, automations.
 - **Show flow**: intro → 10s on-air countdown → live; break / technical / outro
   screens with an artist **credit roll** + a Made-with-Suno rights line.
 
@@ -58,13 +69,38 @@ scripts/live.sh status     # health + now-playing + show phase
 Live-ops: `scripts/live.sh {intro|onair [secs]|resume|tech|brb|outro|now|queue [url]|next}`
 — full reference in **[`docs/live-ops.md`](docs/live-ops.md)**.
 
+## Mod console
+
+Everything above is also drivable from a browser: the ingest serves a
+moderator/operator dashboard on **`http://127.0.0.1:8090/`** (loopback only — no
+auth code to get wrong; remote mods tunnel in over SSH/Tailscale).
+
+![Mod console — live moderation feed with the gold Super-Chat callout tray pinned on top, realtime stage monitor, show transport, now-playing and music controls, and a proposal review pane](docs/dashboard.png)
+
+- **Live moderation feed** (SSE) — every chat message's full pipeline, comment →
+  decision → directive → applied, filterable by stage.
+- **Bans, mutes & timeouts** plus a **users directory** of everyone who
+  interacted, with per-user history and one-click actions.
+- **Hold queue** — with `HOLD_CARDS=on`, viewer cards wait for human approval
+  even after passing the vision gate.
+- **Show + music transport** — on-air countdown, break / tech / outro, skip,
+  fade, intro↔live mode.
+- **Live MJPEG monitors** — the program feed and the off-air **preview twin**,
+  proxied so tunneled mods only need port 8090.
+- **AUTOMATIONS view** — toggle builtin event→animation bindings or author
+  custom ones, and rehearse them against the preview twin before air.
+- **Super-Chat callout tray** — paid messages pin in gold until the host clicks
+  ★ ("thanked them with my voice"); the queue is server-side, shared between
+  mods, and survives reloads.
+- **Kill switch** — one click clears all generated content from the stage.
+
 ## Layout
 
 ```
 packages/
   streamer/   scene + headless capture + ffmpeg→RTMP + /mutate + auto-DJ (src/music/)
   ingest/     YouTube live-chat poll + moderation + director + music requests + votes
-  dashboard/  operator console + kill switch (planned)
+  dashboard/  mod console UI (served by ingest on :8090) — feed, bans, transport, monitors, automations
 scripts/live.sh   one tool to run the whole show
 VISION.md         product charter + roadmap
 docs/             phase notes, live-ops, platform-directions
