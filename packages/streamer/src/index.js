@@ -9,6 +9,7 @@ import { config, ingestUrl } from "./config.js";
 import { startStreamer, startScreencastStreamer } from "./ffmpeg.js";
 import { createDJ } from "./music/dj.js";
 import { createMeter } from "./music/meter.js";
+import { visionCheck, visionEnabled } from "./vision.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCENE_DIR = path.resolve(__dirname, "../scene");
@@ -40,7 +41,12 @@ const ALLOWED_ACTIONS = new Set([
   "setCountdown",
   "renderWarning",
   "status",
+  "mutateElement", // Tier 1: clamped ops against registry elements only
+  "superchatCard", // golden paid-message recognition (deterministic, ingest-fired)
 ]);
+// NB: showCard/takeover/clearCards are deliberately NOT in this allowlist —
+// model-authored markup may only enter through POST /card and /takeover below,
+// which pre-render off-air and vision-gate before anything reaches the scene.
 
 let page = null;
 let streamer = null;
@@ -49,6 +55,9 @@ let dj = null;        // auto-DJ daemon (music)
 let meter = null;     // audio level meter (eq bars)
 let renderMode = "?"; // gpu | cpu
 let gpuRenderer = "";
+let stopping = false; // true during graceful shutdown (silences the watchdog)
+let monitorFrame = null;   // latest screencast JPEG (GPU path) — feeds /monitor.mjpeg
+let monitorClients = 0;    // cap concurrent live-monitor viewers
 // current show phase, tracked from the directives that drive it (see
 // applyDirective): "intro" (pre-show) | "countdown" | "onair" | "outro".
 // Defaults to onair; set to intro on boot when STANDBY_ON_BOOT is on.
@@ -74,6 +83,14 @@ async function applyDirective(directive) {
   } else if (action === "setCountdown") {
     showState = "countdown";
   }
+  return evalScene(action, params);
+}
+
+// the raw scene call (no allowlist) — for internal callers that carry their
+// own authorization: the card/takeover vision gate and GET /elements. All
+// external mutation goes through applyDirective's allowlist above.
+async function evalScene(action, params = {}) {
+  if (!page) throw new Error("scene not ready");
   return page.evaluate(
     (a, p) => {
       if (!window.SceneAPI || typeof window.SceneAPI[a] !== "function") {
@@ -90,9 +107,62 @@ async function applyDirective(directive) {
   );
 }
 
+// Off-air pre-render of model-authored markup: a SEPARATE page — the CDP
+// screencast only captures the scene page, so this can never leak to the
+// broadcast (our analog of hyperframes' createPreviewAdapter). JS is disabled
+// and every network request aborted, matching the sandbox+CSP the scene will
+// impose; CSS animations still run, so the screenshot is a real frame of what
+// would air.
+// Off-air SCENE TWIN: a second full copy of the scene in a page the screencast
+// never captures — automation previews fire here so test animations are never
+// broadcast. Lazy-created, auto-closed after a minute idle (the full scene at
+// 30fps GSAP isn't free).
+let previewScenePromise = null;
+let previewSceneClients = 0;
+let previewSceneIdle = null;
+function ensurePreviewScene() {
+  if (!previewScenePromise) {
+    previewScenePromise = (async () => {
+      const p = await browser.newPage();
+      await p.setViewport({ width: 1280, height: 720 });
+      await p.goto(`http://localhost:${config.controlPort}/`, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await p.waitForFunction("window.__sceneReady === true", { timeout: 15000 }).catch(() => {});
+      console.log("[preview-scene] off-air scene twin up");
+      return p;
+    })().catch((e) => { previewScenePromise = null; throw e; });
+  }
+  return previewScenePromise;
+}
+function schedulePreviewSceneClose() {
+  clearTimeout(previewSceneIdle);
+  previewSceneIdle = setTimeout(async () => {
+    if (previewSceneClients > 0 || !previewScenePromise) return;
+    const p = await previewScenePromise.catch(() => null);
+    previewScenePromise = null;
+    if (p && !p.isClosed()) { p.close().catch(() => {}); console.log("[preview-scene] closed (idle)"); }
+  }, 60000);
+}
+
+let previewPage = null;
+async function renderPreview(html, w, h) {
+  if (!previewPage || previewPage.isClosed()) {
+    previewPage = await browser.newPage();
+    await previewPage.setJavaScriptEnabled(false);
+    await previewPage.setRequestInterception(true);
+    previewPage.on("request", (r) => (r.isNavigationRequest() ? r.continue() : r.abort()).catch(() => {}));
+  }
+  await previewPage.setViewport({ width: w, height: h });
+  await previewPage.setContent(
+    `<!doctype html><html><head><style>html,body{margin:0;width:${w}px;height:${h}px;overflow:hidden;background:#0b0820}</style></head><body>${html}</body></html>`,
+    { waitUntil: "load", timeout: 8000 }
+  );
+  await new Promise((r) => setTimeout(r, 700)); // let CSS animations reach a real frame
+  return previewPage.screenshot({ type: "png", clip: { x: 0, y: 0, width: w, height: h }, encoding: "base64" });
+}
+
 function buildControlApp() {
   const app = express();
-  app.use(express.json({ limit: "32kb" }));
+  app.use(express.json({ limit: "96kb" })); // takeover html can be larger than directives
   app.get("/favicon.ico", (_req, res) => res.status(204).end()); // keep the scene console clean
   app.use(express.static(SCENE_DIR));
 
@@ -122,6 +192,68 @@ function buildControlApp() {
 
   // list of valid actions, for tooling / sanity
   app.get("/actions", (_req, res) => res.json({ actions: [...ALLOWED_ACTIONS] }));
+
+  // Tier 1: the element manifest the director plans mutateElement calls against
+  app.get("/elements", async (_req, res) => {
+    try { res.json(await evalScene("getElements")); }
+    catch (e) { res.status(503).json({ ok: false, error: String(e.message) }); }
+  });
+
+  // --- Tier 2/3: model-authored markup — pre-rendered off-air, vision-gated ---
+  // The ONLY doors to the broadcast for generated HTML. Flow: validate →
+  // render in the off-air preview page → screenshot → vision safety check →
+  // only then hand to the scene's sandboxed iframe slot (with TTL).
+  const gate = async (req, res, kind) => {
+    try {
+      const html = String(req.body?.html || "");
+      const who = String(req.body?.who || "");
+      const source = String(req.body?.source || "operator"); // ingest sends "viewer"
+      const seconds = Number(req.body?.seconds) || undefined;
+      // preview: run the whole gauntlet OFF-AIR and return the screenshot +
+      // vision verdict instead of airing — the moderator hold queue reviews it
+      const preview = req.body?.preview === true;
+      const max = kind === "card" ? 16384 : 65536;
+      if (!html.trim() || html.length > max) return res.status(400).json({ ok: false, error: `html required, <= ${max} bytes` });
+      // belt-and-braces: the iframe sandbox + CSP block all of these anyway
+      // (verified: an svg onload payload renders inert inside the sandbox)
+      if (/<\s*(script|iframe|object|embed|link|meta|base|form)\b|\bon[a-z]+\s*=|url\s*\(/i.test(html)) {
+        return res.status(400).json({ ok: false, error: "disallowed construct" });
+      }
+      // a preview airs nothing, so the no-key 403 and show-phase 409 don't
+      // apply — a human reviews ahead of air time
+      if (!preview && source !== "operator" && !visionEnabled) {
+        return res.status(403).json({ ok: false, error: "viewer-sourced markup needs ANTHROPIC_API_KEY (vision gate)" });
+      }
+      if (!preview && kind === "takeover" && showState !== "onair") {
+        return res.status(409).json({ ok: false, error: `show is in '${showState}' — takeovers only while onair` });
+      }
+      const [w, h] = kind === "card" ? [360, 250] : [1280, 720];
+      const shot = await renderPreview(html, w, h);
+      let vision = null;
+      if (visionEnabled) {
+        vision = await visionCheck(shot, kind === "card" ? `a ${w}x${h} viewer card` : "a full-stage takeover segment");
+        if (!preview && !vision.safe) {
+          console.log(`[${kind}] REJECTED by vision gate (${vision.reason}) — from ${who || source}`);
+          return res.status(422).json({ ok: false, error: `vision gate: ${vision.reason}` });
+        }
+      }
+      if (preview) {
+        return res.json({ ok: true, kind, preview: true, screenshot: shot, vision });
+      }
+      const out = await evalScene(kind === "card" ? "showCard" : "takeover", { html, who, seconds });
+      console.log(`[${kind}] live (${html.length}b) from ${who || source}${visionEnabled ? " [vision-checked]" : " [operator, ungated]"}`);
+      res.json({ ok: true, kind, out });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e.message) });
+    }
+  };
+  app.post("/card", (req, res) => gate(req, res, "card"));
+  app.post("/takeover", (req, res) => gate(req, res, "takeover"));
+  // operator kill for everything model-authored (cards + takeover)
+  app.post("/cards/clear", async (_req, res) => {
+    try { res.json(await evalScene("clearCards")); }
+    catch (e) { res.status(503).json({ ok: false, error: String(e.message) }); }
+  });
 
   // --- music control plane: the ingest posts chat requests/likes here ---
   // queue a requested Suno share link (resolved + CDN-allowlisted by the DJ)
@@ -220,6 +352,79 @@ function buildControlApp() {
     }
   });
 
+  // --- off-air preview twin: apply a directive + watch it, zero broadcast risk ---
+  app.post("/preview/mutate", async (req, res) => {
+    try {
+      const action = String(req.body?.action || "");
+      if (!ALLOWED_ACTIONS.has(action)) return res.status(400).json({ ok: false, error: `disallowed action: ${action}` });
+      const params = req.body?.params && typeof req.body.params === "object" ? req.body.params : {};
+      const p = await ensurePreviewScene();
+      const out = await p.evaluate((a, pr) => {
+        if (!window.SceneAPI || typeof window.SceneAPI[a] !== "function") return { ok: false, error: "twin not ready" };
+        try { return { ok: true, result: window.SceneAPI[a](pr) }; } catch (e) { return { ok: false, error: String(e && e.message) }; }
+      }, action, params);
+      schedulePreviewSceneClose();
+      res.json(out);
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e.message) });
+    }
+  });
+  app.get("/preview.mjpeg", async (req, res) => {
+    let p;
+    try { p = await ensurePreviewScene(); }
+    catch { return res.status(503).json({ ok: false, error: "preview scene failed to start" }); }
+    previewSceneClients++;
+    res.writeHead(200, { "content-type": "multipart/x-mixed-replace; boundary=hlframe", "cache-control": "no-store" });
+    let alive = true;
+    req.on("close", () => { alive = false; });
+    try {
+      while (alive && !stopping && !p.isClosed()) {
+        const buf = Buffer.from(await p.screenshot({ type: "jpeg", quality: 65 }));
+        if (res.writableLength < 4 * 1024 * 1024) {
+          res.write(`--hlframe\r\ncontent-type: image/jpeg\r\ncontent-length: ${buf.length}\r\n\r\n`);
+          res.write(buf);
+          res.write("\r\n");
+        }
+        await new Promise((r) => setTimeout(r, 160)); // ~6fps — preview, not broadcast
+      }
+    } catch { /* twin closed / client gone */ }
+    previewSceneClients--;
+    schedulePreviewSceneClose();
+    res.end();
+  });
+
+  // live monitor: MJPEG stream of the scene — on the GPU path these are the
+  // EXACT frames going to ffmpeg (shared screencast buffer); on the CPU path
+  // it falls back to ~3fps page screenshots. Video only — renders natively
+  // in an <img>, no client libs. The dashboard's pop-out monitor uses this.
+  app.get("/monitor.mjpeg", async (req, res) => {
+    if (!page) return res.status(503).json({ ok: false, error: "scene not ready" });
+    if (monitorClients >= 3) return res.status(503).json({ ok: false, error: "monitor busy (3 viewers max)" });
+    monitorClients++;
+    res.writeHead(200, { "content-type": "multipart/x-mixed-replace; boundary=hlframe", "cache-control": "no-store" });
+    let alive = true;
+    req.on("close", () => { alive = false; });
+    try {
+      while (alive && !stopping) {
+        let buf = monitorFrame;
+        if (!buf) {
+          try { buf = Buffer.from(await page.screenshot({ type: "jpeg", quality: 70 })); }
+          catch { break; }
+        }
+        // slow client → drop frames rather than buffer unbounded (same rule
+        // as the ffmpeg stdin pump)
+        if (res.writableLength < 4 * 1024 * 1024) {
+          res.write(`--hlframe\r\ncontent-type: image/jpeg\r\ncontent-length: ${buf.length}\r\n\r\n`);
+          res.write(buf);
+          res.write("\r\n");
+        }
+        await new Promise((r) => setTimeout(r, monitorFrame ? 100 : 350)); // ~10fps shared / ~3fps fallback
+      }
+    } catch { /* client gone */ }
+    monitorClients--;
+    res.end();
+  });
+
   // PNG screenshot of the current live scene — handy for visual QA
   app.get("/screenshot", async (_req, res) => {
     if (!page) return res.status(503).json({ ok: false, error: "scene not ready" });
@@ -281,9 +486,13 @@ async function launchBrowser(url, opts) {
   page.on("console", (m) => {
     if (m.type() === "error") console.error("[scene console]", m.text());
   });
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
-  await page.waitForFunction("window.__sceneReady === true", { timeout: 10000 }).catch(() => {
-    console.warn("[scene] __sceneReady not observed within 10s; continuing");
+  // domcontentloaded, not networkidle2: the scene is fully local, and we gate
+  // on the explicit __sceneReady handshake below anyway — waiting for network
+  // idle only adds boot latency (and a hang risk if the page ever fetches
+  // something remote). Mirrors hyperframes' capture-navigation fix.
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForFunction("window.__sceneReady === true", { timeout: 15000 }).catch(() => {
+    console.warn("[scene] __sceneReady not observed within 15s; continuing (boot directives will retry)");
   });
   console.log(`[browser] scene loaded (${headless ? "headless" : "headful"} ${width}x${height}@${dsf || 1}x):`, url);
 }
@@ -305,9 +514,28 @@ async function probeGPU() {
   }
 }
 
+// Boot directives MUST land, but the scene may still be initializing when we
+// fire them — a miss used to be silently swallowed (no intro screen, wrong fps
+// hints). Retry until SceneAPI accepts. (Our analog of hyperframes' "replay
+// bridge state on iframe ready" handshake-race fix.)
+async function applyWhenReady(label, attempt, tries = 24, delayMs = 500) {
+  for (let i = 0; i < tries; i++) {
+    const ok = await attempt().catch(() => false);
+    if (ok) return true;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+  console.warn(`[boot] ${label} never applied — scene did not become ready in ${(tries * delayMs) / 1000}s`);
+  return false;
+}
+
 // tell the scene which render mode it's in (toggles blend modes, fps, warning)
 async function applyRenderMode(mode, fps) {
-  await page.evaluate((m, f) => window.SceneAPI && window.SceneAPI.setRenderMode && window.SceneAPI.setRenderMode({ mode: m, fps: f }), mode, fps).catch(() => {});
+  return applyWhenReady("setRenderMode", () =>
+    page.evaluate((m, f) => {
+      if (!window.SceneAPI || typeof window.SceneAPI.setRenderMode !== "function") return false;
+      window.SceneAPI.setRenderMode({ mode: m, fps: f });
+      return true;
+    }, mode, fps));
 }
 
 /**
@@ -388,8 +616,43 @@ async function main() {
   // tell the scene its mode + target fps (so motion fps == capture fps)
   await applyRenderMode(renderMode, eff.fps);
 
-  // optionally come up on the "starting shortly" standby screen
-  if (config.standbyOnBoot) await applyDirective({ action: "setStandby", params: { mode: "intro" } }).catch(() => {});
+  // WATCHDOG: a crashed Chromium doesn't kill ffmpeg — the pump just duplicates
+  // the last frame forever, so the stream freezes while /health still says ok.
+  // Exit instead and let `restart: unless-stopped` bring the pipeline back
+  // clean. Registered only now, AFTER the GPU-probe fallback may have closed
+  // and relaunched the browser (that close is intentional, not a crash).
+  browser.on("disconnected", () => {
+    if (stopping) return;
+    console.error("[watchdog] browser disconnected — exiting for a clean container restart");
+    process.exit(1);
+  });
+  // and a liveness ping: a hung/crashed renderer can leave the browser process
+  // up but the page frozen. NB: a quiet screencast is NOT a crash signal (static
+  // scenes legitimately stop repainting) — only an unresponsive page is.
+  let pingFails = 0;
+  setInterval(async () => {
+    if (stopping) return;
+    const ok = await Promise.race([
+      page.evaluate("1").then(() => true, () => false),
+      new Promise((r) => setTimeout(() => r(false), 10000)),
+    ]);
+    pingFails = ok ? 0 : pingFails + 1;
+    if (!ok) console.warn(`[watchdog] scene ping failed (${pingFails}/3)`);
+    if (pingFails >= 3) {
+      console.error("[watchdog] scene page unresponsive ~90s — exiting for a clean container restart");
+      process.exit(1);
+    }
+  }, 30000).unref();
+
+  // optionally come up on the "starting shortly" standby screen — retried,
+  // because booting straight into the bare show (directive lost while the
+  // scene initialized) is exactly what an operator can't notice from logs
+  if (config.standbyOnBoot) {
+    await applyWhenReady("setStandby(intro)", async () => {
+      const out = await applyDirective({ action: "setStandby", params: { mode: "intro" } });
+      return !!out?.ok;
+    });
+  }
 
   if (config.dryRun) {
     console.log("[stream] DRY_RUN=true → not pushing. Scene is rendering only.");
@@ -406,6 +669,7 @@ async function main() {
     cdp.on("Page.screencastFrame", (f) => {
       cdp.send("Page.screencastFrameAck", { sessionId: f.sessionId }).catch(() => {}); // keep frames flowing
       latestFrame = Buffer.from(f.data, "base64");
+      monitorFrame = latestFrame; // share with /monitor.mjpeg (same frames ffmpeg gets)
       captured++;
     });
     const frameIntervalMs = 1000 / eff.fps;
@@ -458,6 +722,7 @@ async function main() {
   // graceful shutdown
   const shutdown = async (sig) => {
     console.log(`\n[shutdown] ${sig} received`);
+    stopping = true;
     if (meter) meter.stop();
     if (dj) dj.stop();
     if (streamer) streamer.stop();

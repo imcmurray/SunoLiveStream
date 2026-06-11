@@ -5,6 +5,19 @@
    Everything is sized against a fixed 1280x720 stage to match the encoder.
 =========================================================================== */
 
+/* Vendored Inter (variable, OFL — see vendor/inter/LICENSE.txt) so the
+   broadcast typography is deterministic: the container image has no Inter,
+   and without this the whole scene silently fell back to Liberation Sans.
+   (Mirrors hyperframes' font-embedding pipeline: compositions carry their
+   own fonts instead of trusting the render host.) */
+@font-face {
+  font-family: "Inter";
+  src: url("vendor/inter/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
@@ -412,6 +425,51 @@ body.has-cover .ovl-scanlines { opacity: 0.14; }
 .tcard-dot.on { background: var(--c3); box-shadow: 0 0 6px var(--c3); }
 
 /* ===================== cinematic overlays (default on) =================== */
+/* superchat recognition: golden center-stage cards */
+#superchats {
+  position: absolute; left: 50%; transform: translateX(-50%); top: 92px;
+  z-index: 6; display: flex; flex-direction: column; gap: 10px; align-items: center;
+  pointer-events: none;
+}
+.sc-card {
+  display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+  border-radius: 16px; position: relative; overflow: hidden; max-width: 780px;
+  background: linear-gradient(135deg, rgba(64, 45, 6, 0.94), rgba(30, 20, 3, 0.94));
+  border: 1.5px solid #ffc83d;
+  box-shadow: 0 12px 56px rgba(255, 200, 61, 0.28), inset 0 0 0 1px rgba(255, 200, 61, 0.14);
+}
+.sc-card .sc-shimmer { /* swept by GSAP */
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 32%, rgba(255, 236, 170, 0.25) 50%, transparent 68%);
+}
+.sc-card .sc-badge { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.sc-card .sc-label { font-size: 10px; letter-spacing: 0.28em; color: #ffd989; font-weight: 800; }
+.sc-card .sc-amount { font-size: 24px; font-weight: 800; color: #ffdf7e; text-shadow: 0 0 20px rgba(255, 200, 61, 0.55); }
+.sc-card .sc-body .sc-who { font-size: 19px; font-weight: 800; color: #fff3d6; letter-spacing: 0.01em; }
+.sc-card .sc-body .sc-msg { font-size: 15px; color: rgba(255, 243, 214, 0.85); max-width: 480px; margin-top: 2px; }
+.sc-card.tier-medium { border-width: 2px; }
+.sc-card.tier-large { border-width: 2.5px; box-shadow: 0 16px 70px rgba(255, 200, 61, 0.4), inset 0 0 0 1px rgba(255, 200, 61, 0.2); }
+
+/* Tier 2: sandboxed viewer-card slot (lower right, above ticker, below grain) */
+#card-slot { position: absolute; right: 48px; bottom: 210px; z-index: 5; pointer-events: none; }
+.viewer-card {
+  width: 362px; border-radius: 14px; overflow: hidden;
+  background: rgba(10, 8, 26, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+.viewer-card-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--c2, #9ae6ff); padding: 7px 12px 5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.viewer-card iframe { display: block; }
+
+/* Tier 3: full-stage takeover — above the show content, UNDER the film-grain
+   overlays (7) and standby screens (11+), so standby/outro always win */
+#takeover { position: absolute; inset: 0; z-index: 6; pointer-events: none; display: none; background: #05030f; }
+#takeover[data-show="true"] { display: block; }
+
 #overlays { position: absolute; inset: 0; z-index: 7; pointer-events: none; }
 .ovl { position: absolute; inset: 0; }
 .ovl.is-off { display: none; }

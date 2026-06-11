@@ -1,0 +1,1018 @@
+<!doctype html>
+<!-- Phase 4: moderator console. Served by the ingest's loopback admin server
+     (packages/ingest/src/admin.js). Self-contained on purpose: no webfonts,
+     no CDNs, no build step — it must render on an air-gapped loopback box. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HYPERLIVE · MOD CONSOLE</title>
+<style>
+  :root {
+    --bg: #0a0c0a;
+    --panel: #101410;
+    --panel2: #0d100d;
+    --line: #1e261e;
+    --txt: #c8d6c8;
+    --dim: #5e6e5e;
+    --green: #4ade80;   /* applied / ok */
+    --red: #f87171;     /* blocked / banned */
+    --amber: #fbbf24;   /* held / pending */
+    --cyan: #67e8f9;    /* music */
+    --violet: #c4b5fd;  /* votes */
+    --mono: "Berkeley Mono", "IBM Plex Mono", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--txt); font: 13px/1.45 var(--mono);
+    overflow: hidden;
+  }
+  /* control-room texture: faint scanlines + vignette, matching the stage */
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 99;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,0.10) 2px 3px),
+      radial-gradient(ellipse at 50% 40%, transparent 60%, rgba(0,0,0,0.5));
+  }
+
+  /* ---- top bar ---- */
+  header {
+    display: flex; align-items: center; gap: 18px;
+    height: 46px; padding: 0 16px;
+    background: linear-gradient(#131913, #0e120e);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-weight: 700; letter-spacing: .22em; font-size: 13px; }
+  .brand b { color: var(--green); }
+  .leds { display: flex; gap: 14px; margin-left: 10px; }
+  .led { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dim); letter-spacing: .08em; }
+  .led i {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: #333; box-shadow: 0 0 0 1px #000 inset;
+  }
+  .led.on i  { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2.2s infinite; }
+  .led.bad i { background: var(--red);   box-shadow: 0 0 8px var(--red); }
+  @keyframes pulse { 50% { opacity: .55; } }
+  .spacer { flex: 1; }
+  #vitals-bar { color: var(--dim); font-size: 11px; letter-spacing: .06em; }
+  #vitals-bar b { color: var(--txt); font-weight: 400; }
+  #clock { color: var(--dim); letter-spacing: .12em; font-size: 12px; }
+  /* guarded kill switch */
+  #kill {
+    font: 700 11px var(--mono); letter-spacing: .14em;
+    color: #ffd9d9; background: #3a1010; border: 1px solid #7a2424;
+    padding: 7px 14px; cursor: pointer; border-radius: 3px;
+    transition: background .15s, box-shadow .15s;
+  }
+  #kill:hover { background: #5a1616; box-shadow: 0 0 14px rgba(248,113,113,.35); }
+  #kill.armed { background: #a31f1f; color: #fff; animation: pulse 1s infinite; }
+
+  /* ---- 3-column console ---- */
+  main {
+    display: grid; grid-template-columns: 230px 1fr 380px;
+    height: calc(100% - 46px);
+  }
+  section { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  section:last-child { border-right: 0; }
+  h2 {
+    font-size: 10px; letter-spacing: .24em; color: var(--dim); font-weight: 700;
+    padding: 10px 12px 8px; border-bottom: 1px solid var(--line);
+    background: var(--panel2); flex: none;
+  }
+  .scroll { overflow-y: auto; flex: 1; min-height: 0; }
+  .scroll::-webkit-scrollbar { width: 8px; }
+  .scroll::-webkit-scrollbar-thumb { background: #223022; border-radius: 4px; }
+
+  /* ---- left rail: status + bans ---- */
+  #monitor {
+    display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover;
+    background: #000; border-bottom: 1px solid var(--line);
+    transition: opacity .3s; cursor: zoom-in;
+  }
+  #monitor.stale { opacity: .25; }
+  /* pop-out live monitor (MJPEG — the broadcast's own frames, video only) */
+  #live-modal {
+    position: fixed; inset: 0; z-index: 200; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    background: rgba(2, 4, 2, 0.88); cursor: zoom-out;
+  }
+  #live-modal[data-open="true"] { display: flex; }
+  #live-img {
+    max-width: 92vw; max-height: 84vh; background: #000;
+    border: 1px solid var(--line); border-radius: 4px;
+    box-shadow: 0 30px 90px rgba(0, 0, 0, 0.7);
+  }
+  #live-cap { font-size: 11px; letter-spacing: .18em; color: var(--dim); }
+  #live-cap b { color: var(--red); animation: pulse 1.6s infinite; font-weight: 400; }
+  .stat { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .stat .k { font-size: 10px; color: var(--dim); letter-spacing: .18em; }
+  .stat .v { font-size: 15px; margin-top: 2px; word-break: break-all; }
+  .v.green { color: var(--green); } .v.red { color: var(--red); } .v.cyan { color: var(--cyan); }
+  #bans { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .ban-chip {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: #1a0f0f; border: 1px solid #3a1d1d; border-radius: 3px;
+    padding: 5px 8px; font-size: 12px; color: #f1b8b8;
+  }
+  .ban-chip button { background: none; border: 0; color: var(--dim); cursor: pointer; font: 11px var(--mono); }
+  .ban-chip button:hover { color: var(--txt); }
+  #ban-form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--line); }
+  #ban-form input {
+    flex: 1; background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
+    font: 12px var(--mono); padding: 6px 8px; border-radius: 3px; min-width: 0;
+  }
+  #ban-form select {
+    background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
+    font: 11px var(--mono); border-radius: 3px;
+  }
+  #ban-form button, .btn {
+    background: #162016; border: 1px solid #2c3c2c; color: var(--txt);
+    font: 700 11px var(--mono); letter-spacing: .08em; padding: 6px 10px;
+    cursor: pointer; border-radius: 3px;
+  }
+  #ban-form button:hover, .btn:hover { background: #1e2c1e; }
+
+  /* show/music transport (the live.sh verbs) */
+  .ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; }
+  .ctl-grid button {
+    background: #131a13; border: 1px solid #2c3c2c; color: var(--txt);
+    font: 700 10px var(--mono); letter-spacing: .1em; padding: 8px 4px;
+    cursor: pointer; border-radius: 3px;
+  }
+  .ctl-grid button:hover { background: #1e2c1e; box-shadow: 0 0 8px rgba(74,222,128,.15); }
+  .ctl-grid button.live { grid-column: span 2; color: var(--green); border-color: #234c32; }
+  .ctl-grid button.danger { color: #f1b8b8; border-color: #532222; background: #170d0d; }
+  .ctl-grid button.danger:hover { background: #2a1010; box-shadow: 0 0 8px rgba(248,113,113,.2); }
+  #upnext { padding: 4px 12px 10px; font-size: 11px; color: var(--dim); }
+  #upnext b { color: var(--cyan); font-weight: 400; }
+
+  /* ---- center: the live feed ---- */
+  #toolbar {
+    display: flex; gap: 6px; align-items: center; padding: 7px 10px;
+    border-bottom: 1px solid var(--line); background: var(--panel2); flex: none;
+  }
+  .fchip {
+    background: none; border: 1px solid #283228; color: var(--dim);
+    font: 700 10px var(--mono); letter-spacing: .1em; padding: 4px 8px;
+    cursor: pointer; border-radius: 2px;
+  }
+  .fchip.active { color: var(--green); border-color: #234c32; background: #0e1f15; }
+  #fsearch {
+    flex: 1; min-width: 60px; background: #0c0f0c; border: 1px solid var(--line);
+    color: var(--txt); font: 11px var(--mono); padding: 4px 8px; border-radius: 2px;
+  }
+  #fpause { background: none; border: 1px solid #283228; color: var(--dim); font: 700 10px var(--mono); padding: 4px 8px; cursor: pointer; border-radius: 2px; }
+  #fpause.on { color: var(--amber); border-color: #5c4a16; background: #211a08; }
+  .mini-menu button {
+    background: #1a0f0f; border: 1px solid #3a1d1d; color: #f1b8b8;
+    font: 10px var(--mono); padding: 2px 4px; cursor: pointer; border-radius: 2px; margin-left: 2px;
+  }
+  #feed { padding: 6px 0; }
+
+  /* ---- users view ---- */
+  .vswitch { display: flex; margin-right: 8px; }
+  .vswitch button {
+    background: #0c0f0c; border: 1px solid #283228; color: var(--dim);
+    font: 700 10px var(--mono); letter-spacing: .12em; padding: 4px 10px; cursor: pointer;
+  }
+  .vswitch button:first-child { border-radius: 2px 0 0 2px; }
+  .vswitch button:last-child { border-radius: 0 2px 2px 0; border-left: 0; }
+  .vswitch button.active { color: var(--green); border-color: #234c32; background: #0e1f15; }
+  .urow {
+    display: grid; grid-template-columns: 30px 1fr 80px 150px 80px;
+    gap: 10px; padding: 6px 12px; align-items: center;
+    border-bottom: 1px solid #131913; cursor: pointer;
+  }
+  .urow:hover { background: #101810; }
+  .urow img, .uavatar { width: 24px; height: 24px; border-radius: 50%; background: #1a221a; object-fit: cover; display: inline-block; }
+  .ubadge {
+    font-size: 9px; font-weight: 700; letter-spacing: .1em;
+    padding: 1px 5px; border-radius: 2px; border: 1px solid; margin-left: 6px;
+  }
+  .ubadge.b { color: var(--red); border-color: #532222; }
+  .ubadge.m { color: var(--amber); border-color: #5c4a16; }
+  .udhead { display: flex; align-items: center; gap: 14px; padding: 14px; border-bottom: 1px solid var(--line); }
+  .udhead img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; }
+  .udctl { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .btn.danger { color: #f1b8b8; border-color: #532222; background: #170d0d; }
+  .btn.danger:hover { background: #2a1010; }
+
+  /* superchat rows glow gold in the feed */
+  .row.sc { background: linear-gradient(90deg, rgba(251, 191, 36, 0.09), transparent 65%); box-shadow: inset 2px 0 0 #ffd34d; }
+  .scamt { color: #ffd34d; font-weight: 700; margin-right: 8px; white-space: nowrap; }
+  .c-sc { color: #ffd34d; border-color: #6b5410; background: #241a04; }
+
+  /* callout tray: superchats pinned until the host thanks them on air */
+  #sc-tray {
+    flex: none; max-height: 168px; overflow-y: auto;
+    background: rgba(36, 26, 4, 0.4);
+    border-bottom: 1px solid #6b5410;
+  }
+  #sc-tray:empty { display: none; }
+  #sc-tray .row { border-bottom: 1px solid rgba(107, 84, 16, 0.35); animation: none; }
+  @keyframes scpulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 211, 77, 0); }
+    50% { box-shadow: 0 0 10px 2px rgba(255, 211, 77, 0.55); }
+  }
+  .chip.c-sc.awaiting { cursor: pointer; animation: scpulse 1.5s infinite; }
+  .chip.c-sc.awaiting:hover { background: #3a2c06; }
+  .chip.c-sc.awaiting:hover::after { content: " 🎙"; }
+
+  /* automations view */
+  .arow {
+    display: grid; grid-template-columns: 1fr 170px 44px 90px; gap: 12px;
+    padding: 12px 14px; align-items: center; border-bottom: 1px solid #131913;
+  }
+  .arow .adesc b { color: var(--cyan); font-weight: 400; }
+  #autos-list select {
+    background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
+    font: 11px var(--mono); padding: 5px 7px; border-radius: 3px;
+  }
+  .arow .alabel { color: #cfe8cf; font-size: 14px; }
+  .arow .adesc { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .arow select {
+    background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
+    font: 11px var(--mono); padding: 5px 7px; border-radius: 3px; width: 100%;
+  }
+  .atoggle {
+    font: 700 10px var(--mono); letter-spacing: .12em; padding: 7px 0; text-align: center;
+    cursor: pointer; border-radius: 3px; border: 1px solid;
+  }
+  .atoggle.on { color: var(--green); border-color: #234c32; background: #0e1f15; }
+  .atoggle.off { color: var(--dim); border-color: #283228; background: transparent; }
+  .row {
+    /* trailing auto column holds song info on music rows, collapses to
+       nothing everywhere else */
+    display: grid; grid-template-columns: 64px 86px 190px 1fr auto;
+    gap: 10px; padding: 5px 12px; align-items: baseline;
+    border-bottom: 1px solid #131913;
+    animation: land .35s ease-out;
+  }
+  @keyframes land { from { background: #1d2a1d; } }
+  .row .t { color: var(--dim); font-size: 11px; }
+  .chip {
+    font-size: 10px; font-weight: 700; letter-spacing: .1em; text-align: center;
+    padding: 2px 0; border-radius: 2px; border: 1px solid;
+  }
+  .c-applied  { color: var(--green);  border-color: #234c32; background: #0e1f15; }
+  .c-blocked  { color: var(--red);    border-color: #532222; background: #1f0e0e; }
+  .c-banned   { color: var(--red);    border-color: #532222; background: #2a0c0c; }
+  .c-held     { color: var(--amber);  border-color: #5c4a16; background: #211a08; }
+  .c-skipped  { color: var(--dim);    border-color: #283228; background: transparent; }
+  /* a cooldown skip is mod-replayable: click the chip to APPLY it anyway */
+  .chip.replayable { cursor: pointer; }
+  .chip.replayable:hover { color: var(--green); border-color: #234c32; background: #0e1f15; }
+  .chip.replayable:hover::after { content: " ▶"; }
+  .c-music    { color: var(--cyan);   border-color: #1c4b56; background: #0a1b1f; }
+  .c-vote     { color: var(--violet); border-color: #3f3760; background: #14101f; }
+  .c-mod      { color: var(--amber);  border-color: #5c4a16; background: #1a1505; }
+  .row .who { color: #9fc09f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txt); }
+  .row .msg small { color: var(--dim); }
+  .row .msg a { color: var(--cyan); text-decoration: underline dotted; }
+  .row .msg a:hover { text-decoration: underline; }
+  .row .song {
+    color: var(--cyan); font-size: 12px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; max-width: 300px;
+  }
+  /* ban affordance rides next to the name; near-hidden until the row is hovered */
+  .banbox { display: inline; margin-left: 7px; }
+  .banbox > button {
+    background: none; border: 1px solid #3a2020; color: #b97c7c; font: 10px var(--mono);
+    padding: 1px 5px; cursor: pointer; border-radius: 2px;
+    opacity: .25; transition: opacity .12s;
+  }
+  .row:hover .banbox > button { opacity: 1; }
+  .banbox > button:hover { background: #2a1010; color: #f1b8b8; }
+  .banbox.mini-menu > button { opacity: 1; } /* an open menu never dims */
+
+  /* ---- right: pending review + compose ---- */
+  .pending-item {
+    margin: 10px; border: 1px solid #4a3c14; background: #161204; border-radius: 4px;
+    overflow: hidden; animation: land .4s ease-out;
+  }
+  .pending-item .ph { padding: 7px 10px; display: flex; justify-content: space-between; font-size: 11px; color: var(--amber); letter-spacing: .08em; }
+  .pending-item img { display: block; width: 100%; background: #000; border-block: 1px solid #3a2f10; }
+  .pending-item .req { padding: 6px 10px; color: var(--dim); font-size: 11px; }
+  .pending-item .vv { padding: 0 10px 6px; font-size: 11px; }
+  .pending-item .row-btns { display: flex; }
+  .row-btns button {
+    flex: 1; padding: 8px 0; border: 0; cursor: pointer; font: 700 11px var(--mono); letter-spacing: .14em;
+  }
+  .approve { background: #0f2a18; color: var(--green); } .approve:hover { background: #16401f; }
+  .reject  { background: #2a0f0f; color: var(--red); }   .reject:hover  { background: #401616; }
+  #none-pending { color: var(--dim); text-align: center; padding: 26px 0 16px; font-size: 11px; letter-spacing: .14em; }
+  #compose { border-top: 1px solid var(--line); padding: 10px; flex: none; }
+  #compose textarea {
+    width: 100%; height: 74px; background: #0c0f0c; border: 1px solid var(--line);
+    color: var(--txt); font: 11px var(--mono); padding: 7px; border-radius: 3px; resize: vertical;
+  }
+  #compose .crow { display: flex; gap: 6px; margin-top: 6px; }
+  #compose select, #compose input {
+    background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
+    font: 11px var(--mono); padding: 5px 7px; border-radius: 3px;
+  }
+  #compose input { flex: 1; min-width: 0; }
+  #toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: #162016; border: 1px solid var(--line); color: var(--txt);
+    padding: 8px 16px; border-radius: 4px; font-size: 12px; display: none; z-index: 100;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">HYPERLIVE <b>MOD CONSOLE</b></div>
+  <div class="leds">
+    <span class="led" id="led-ingest"><i></i>INGEST</span>
+    <span class="led" id="led-stream"><i></i>STREAM</span>
+    <span class="led" id="led-scene"><i></i>SCENE</span>
+  </div>
+  <div class="spacer"></div>
+  <span id="vitals-bar"></span>
+  <span id="clock"></span>
+  <button id="kill" title="clear all model-generated content from the stage">◉ KILL GENERATED</button>
+</header>
+
+<main>
+  <!-- left rail -->
+  <section>
+    <h2>STAGE MONITOR — REALTIME</h2>
+    <img id="monitor" alt="live stage" title="what is on the broadcast RIGHT NOW (YouTube's preview runs ~30s behind)">
+    <h2>SHOW</h2>
+    <div class="stat"><div class="k">PHASE</div><div class="v" id="s-phase">—</div></div>
+    <div class="stat"><div class="k">NOW PLAYING</div><div class="v cyan" id="s-song">—</div></div>
+    <div class="stat"><div class="k">HOLD MODE</div><div class="v" id="s-hold">—</div></div>
+    <h2>SHOW CONTROL</h2>
+    <div class="ctl-grid" id="show-ctl">
+      <button data-show="onair" class="live">▶ GO ON AIR (10s)</button>
+      <button data-show="standby:break">⏸ BREAK</button>
+      <button data-show="standby:technical">⚠ TECH</button>
+      <button data-show="standby:intro">⏮ INTRO</button>
+      <button data-show="standby:off">● RESUME</button>
+      <button data-show="outro" class="danger" style="grid-column:span 2">⏹ OUTRO — SIGN OFF</button>
+    </div>
+    <h2>MUSIC</h2>
+    <div class="ctl-grid" id="music-ctl">
+      <button data-music="skip">⏭ SKIP</button>
+      <button data-music="mode">⇄ <span id="m-mode">MODE</span></button>
+      <button data-music="fadeout">FADE OUT</button>
+      <button data-music="fadein">FADE IN</button>
+    </div>
+    <div id="upnext"></div>
+    <h2>BAN LIST</h2>
+    <div class="scroll" id="bans"></div>
+    <form id="ban-form">
+      <input id="ban-input" placeholder="@name or channelId" autocomplete="off">
+      <select id="ban-dur"><option value="0">perm</option><option value="10">10m</option><option value="60">1h</option></select>
+      <button>BAN</button>
+    </form>
+  </section>
+
+  <!-- center: feed -->
+  <section>
+    <h2>MODERATION FEED — LIVE</h2>
+    <div id="toolbar">
+      <div class="vswitch"><button id="v-feed" class="active">FEED</button><button id="v-users">USERS</button><button id="v-autos">AUTOS</button></div>
+      <button class="fchip active" data-f="all">ALL</button>
+      <button class="fchip" data-f="blocked">BLOCKED</button>
+      <button class="fchip" data-f="held">HELD</button>
+      <button class="fchip" data-f="mod">MOD</button>
+      <button class="fchip" data-f="music">MUSIC</button>
+      <button class="fchip" data-f="vote">VOTE</button>
+      <button class="fchip" data-f="sc" style="color:#ffd34d">💰 SC</button>
+      <input id="fsearch" placeholder="filter author / text…" autocomplete="off">
+      <button id="fpause">⏸ PAUSE</button>
+    </div>
+    <div id="sc-tray" title="superchats awaiting an on-air callout — click the pulsing ★ once you've thanked them with your voice"></div>
+    <div class="scroll" id="feedwrap"><div id="feed"></div></div>
+    <div class="scroll" id="userswrap" style="display:none">
+      <div id="users-list"></div>
+      <div id="user-detail" style="display:none"></div>
+    </div>
+    <div class="scroll" id="autowrap" style="display:none"><div id="autos-list"></div></div>
+  </section>
+
+  <!-- right: review queue -->
+  <section>
+    <h2>PENDING REVIEW</h2>
+    <div class="scroll" id="pending"><div id="none-pending">— QUEUE EMPTY —</div></div>
+    <div id="compose">
+      <h2 style="border:0;background:none;padding:0 0 6px">COMPOSE (MOD-AUTHORED)</h2>
+      <textarea id="c-html" placeholder="<div style=&quot;…&quot;>raw HTML+CSS — previews off-air into the queue</div>"></textarea>
+      <div class="crow">
+        <select id="c-kind"><option value="card">card 360×250</option><option value="takeover">takeover 1280×720</option></select>
+        <input id="c-who" placeholder="credit as…" value="moderator">
+        <button class="btn" id="c-send">PREVIEW → QUEUE</button>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+<div id="live-modal" data-open="false">
+  <img id="live-img" alt="live broadcast monitor">
+  <div id="live-cap"><b>●</b> LIVE MONITOR — the broadcast's own frames, video only · click or ESC to close</div>
+</div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const toast = (msg) => { const t = $("#toast"); t.textContent = msg; t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 2600); };
+  const api = (path, body) => fetch(path, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}).then((r) => r.json());
+
+  setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString(); }, 1000);
+
+  // ---- stage → chip class/label ----
+  const CHIP = {
+    applied: ["c-applied", "APPLIED"], blocked: ["c-blocked", "BLOCKED"], banned: ["c-banned", "BANNED"],
+    skipped: ["c-skipped", "skip"], held: ["c-held", "HELD"], card_held: ["c-held", "HELD"],
+    card: ["c-held", "CARD"], music_request: ["c-music", "MUSIC"], music_like: ["c-music", "LIKE"],
+    vote: ["c-vote", "VOTE"], approved: ["c-mod", "APPROVED"], rejected_by_mod: ["c-mod", "REJECTED"],
+    banned_by_mod: ["c-mod", "MOD BAN"], unbanned: ["c-mod", "UNBAN"], kill_switch: ["c-mod", "KILL"],
+    error: ["c-blocked", "ERROR"], card_cooldown: ["c-skipped", "cooldn"], approve_failed: ["c-blocked", "AIRFAIL"],
+    muted: ["c-held", "MUTED"], muted_by_mod: ["c-mod", "MOD MUTE"], unmuted: ["c-mod", "UNMUTE"],
+    show_control: ["c-mod", "SHOW"], music_control: ["c-mod", "MUSIC"],
+    superchat: ["c-sc", "★ SUPER"], automation: ["c-mod", "AUTO"], sc_ack: ["c-sc", "CALLED OUT"],
+  };
+
+  // ---- live feed: client-side event store + filters + pause ----
+  const feed = $("#feed");
+  const feedwrap = $("#feedwrap");
+  const events = [];
+  let filter = "all", search = "", paused = false, bufferedWhilePaused = 0;
+  const GROUPS = {
+    blocked: ["blocked", "banned", "muted", "error", "approve_failed"],
+    held: ["held", "card_held", "card", "card_cooldown"],
+    mod: ["approved", "rejected_by_mod", "banned_by_mod", "unbanned", "muted_by_mod", "unmuted", "kill_switch", "show_control", "music_control", "automation"],
+    music: ["music_request", "music_like"],
+    vote: ["vote"],
+    sc: ["superchat"],
+  };
+  // a superchat comment shows as ONE gold row: the recognition event. Its
+  // pipeline follow-ups (applied / skipped / music_request…) fold into that
+  // row's detail instead of appearing as second lines.
+  let scIds = new Set();
+  let awaiting = new Map(); // cid → superchat event pinned in the callout tray
+  function passes(e) {
+    if (e.stage !== "superchat" && e.comment?.id && scIds.has(e.comment.id)) return false;
+    if (e.stage === "superchat" && awaiting.has(e.comment?.id)) return false; // lives in the tray, not the flow
+    // the 💰 chip also matches any row whose comment carried money
+    if (filter === "sc") {
+      if (!(e.stage === "superchat" || e.comment?.superchat)) return false;
+    } else if (filter !== "all" && !(GROUPS[filter] || []).includes(e.stage)) return false;
+    if (search) {
+      const c = e.comment || {};
+      if (!(`${c.author || ""} ${c.text || ""}`.toLowerCase().includes(search))) return false;
+    }
+    return true;
+  }
+  // escape first, then turn surviving URLs into links (quotes are already
+  // entity-escaped, so the href attribute can't be broken out of)
+  const linkify = (t) => esc(t).replace(/https?:\/\/[^\s<]+/g, (u) => `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
+  const followSummary = (e) =>
+    `→ ${(CHIP[e.stage] || [])[1] || e.stage}` +
+    (e.result?.title ? `: ${e.result.title}` : e.reason ? ` (${e.reason})` : e.directive ? `: ${e.directive.action}` : "");
+  function buildRow(e) {
+    const c = e.comment || {};
+    const [cls, label] = CHIP[e.stage] || ["c-skipped", e.stage || "?"];
+    let detail = e.reason || e.error || e.result?.reason || (e.directive ? e.directive.action : "") || e.request || "";
+    // music rows: resolved song name + artist ride in the trailing column
+    let song = e.stage?.startsWith("music") && e.result?.title
+      ? `♪ ${e.result.title} — ${e.result.artist || "?"}` : "";
+    // superchat rows absorb their comment's later pipeline events (rebuild path)
+    if (e.stage === "superchat" && c.id) {
+      const fu = events.filter((x) => x.seq > e.seq && x.comment?.id === c.id);
+      if (fu.length) detail = followSummary(fu[fu.length - 1]);
+      const mus = fu.find((x) => x.result?.title);
+      if (mus) song = `♪ ${mus.result.title} — ${mus.result.artist || "?"}`;
+    }
+    const row = document.createElement("div");
+    row.className = "row" + (c.superchat ? " sc" : "");
+    row.dataset.seq = e.seq;
+    if (e.stage === "superchat" && c.id) row.dataset.cid = c.id;
+    const bannable = c.author && !["banned", "banned_by_mod", "unbanned"].includes(e.stage);
+    // a cooldown skip can be replayed by a moderator (click the chip)
+    const replayable = e.stage === "skipped" && /cooldown/.test(detail);
+    row.innerHTML =
+      `<span class="t">${esc((e.t || "").slice(11, 19))}</span>` +
+      `<span class="chip ${cls}${replayable ? " replayable" : ""}" ${replayable ? 'title="apply anyway (mod override of the cooldown)"' : ""}>${esc(label)}</span>` +
+      `<span class="who">${esc(c.author || "")}${bannable ? `<span class="banbox"><button data-ban="${esc(c.author)}" data-cid="${esc(c.channelId || "")}">ban</button></span>` : ""}</span>` +
+      `<span class="msg">${c.superchat ? `<span class="scamt">★ ${esc(c.superchat.amount || "PAID")}</span>` : ""}${linkify(c.text || "")}${detail ? ` <small>· ${esc(detail)}</small>` : ""}</span>` +
+      `<span class="song">${esc(song)}</span>`;
+    return row;
+  }
+  function appendRow(e) {
+    const stick = feedwrap.scrollTop + feedwrap.clientHeight >= feedwrap.scrollHeight - 40;
+    feed.appendChild(buildRow(e));
+    while (feed.children.length > 300) feed.removeChild(feed.firstChild);
+    if (stick) feedwrap.scrollTop = feedwrap.scrollHeight;
+  }
+  function rebuildFeed() {
+    feed.replaceChildren(...events.filter(passes).slice(-300).map(buildRow));
+    feedwrap.scrollTop = feedwrap.scrollHeight;
+  }
+  // ---- callout tray: superchats pinned until the host thanks them on air ----
+  const tray = $("#sc-tray");
+  function renderTray() {
+    tray.replaceChildren(...[...awaiting.values()].map((e) => {
+      const r = buildRow(e);
+      r.querySelector(".banbox")?.remove(); // you're thanking them, not banning them
+      const chip = r.querySelector(".chip");
+      chip.classList.add("awaiting");
+      chip.title = "click once you've called them out on stream 🎙";
+      return r;
+    }));
+  }
+  tray.addEventListener("click", async (ev) => {
+    const chip = ev.target.closest(".chip.c-sc.awaiting");
+    if (!chip) return;
+    const cid = chip.closest(".row")?.dataset.cid;
+    const e = awaiting.get(cid);
+    if (!cid || !e) return;
+    const r = await api("/admin/superchats/ack", { id: cid });
+    if (!r.ok) return toast(`ack failed: ${r.error || "?"}`);
+    awaiting.delete(cid);
+    renderTray();
+    if (passes(e)) appendRow(e); // drops into the normal flow — gold, no pulse
+    toast(`called out ✓ ${e.comment?.author || ""}`);
+  });
+
+  // live-update a superchat row when a folded follow-up arrives
+  function updateScRow(e) {
+    const row = feed.querySelector(`.row[data-cid="${CSS.escape(e.comment.id)}"]`);
+    if (!row) return;
+    let s = row.querySelector(".sc-follow");
+    if (!s) { s = document.createElement("small"); s.className = "sc-follow"; row.querySelector(".msg").appendChild(s); }
+    s.textContent = " " + followSummary(e);
+    if (e.result?.title) row.querySelector(".song").textContent = `♪ ${e.result.title} — ${e.result.artist || "?"}`;
+  }
+
+  // browser notifications for held items (gesture-gated permission request)
+  let notifyOk = false;
+  document.addEventListener("click", () => {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "default") Notification.requestPermission().then((p) => { notifyOk = p === "granted"; });
+    else notifyOk = Notification.permission === "granted";
+  }, { once: true });
+
+  function connect() {
+    const es = new EventSource("/admin/feed");
+    es.onmessage = (m) => {
+      try {
+        const e = JSON.parse(m.data);
+        events.push(e);
+        if (events.length > 400) events.shift();
+        if (["held", "card_held"].includes(e.stage)) {
+          if (notifyOk) new Notification("HyperLive — held for review", { body: `${e.kind || "card"} from ${e.comment?.author || "?"}` });
+          refresh();
+        } else if (["approved", "rejected_by_mod", "banned_by_mod", "unbanned"].includes(e.stage)) refresh();
+        // superchat folding: remember recognized comment ids; their follow-up
+        // events update the existing gold row instead of adding a second one
+        const cid = e.comment?.id;
+        if (e.stage === "superchat" && cid) {
+          scIds.add(cid);
+          if (scIds.size > 600) scIds = new Set(events.filter((x) => x.stage === "superchat" && x.comment?.id).map((x) => x.comment.id));
+          awaiting.set(cid, e); // pin in the callout tray until the host acks
+          renderTray();         // (tray updates even while the feed is paused)
+          return;
+        } else if (cid && scIds.has(cid)) {
+          if (!paused && !hoverPause && !menuLock) updateScRow(e);
+          return;
+        }
+        if (paused) { bufferedWhilePaused++; $("#fpause").textContent = `▶ RESUME (${bufferedWhilePaused})`; return; }
+        if (hoverPause || menuLock) { missedWhileHover = true; return; } // frozen under the cursor / open menu
+        if (passes(e)) appendRow(e);
+      } catch {}
+    };
+    es.onerror = () => { es.close(); $("#led-ingest").className = "led bad"; setTimeout(connect, 3000); };
+    es.onopen = () => { $("#led-ingest").className = "led on"; refresh(); }; // re-sync the tray right after ring replay
+  }
+  connect();
+
+  // toolbar: filter chips, author/text search, pause-scroll
+  document.querySelectorAll(".fchip").forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(".fchip").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    filter = b.dataset.f;
+    rebuildFeed();
+    if (typeof renderUsers === "function") renderUsers();
+  }));
+  $("#fsearch").addEventListener("input", (ev) => {
+    search = ev.target.value.trim().toLowerCase();
+    rebuildFeed();
+    if (typeof renderUsers === "function") renderUsers();
+  });
+  $("#fpause").addEventListener("click", () => {
+    paused = !paused;
+    $("#fpause").classList.toggle("on", paused);
+    if (!paused) { $("#fpause").textContent = "⏸ PAUSE"; bufferedWhilePaused = 0; rebuildFeed(); }
+    else $("#fpause").textContent = "▶ RESUME (0)";
+  });
+
+  // feed-freeze, two strengths:
+  //  hover  — cursor on a clickable target (replay chip / ban button): frozen
+  //           while hovered, released on mouse-off
+  //  menu   — a ban menu is OPEN: stays frozen regardless of hover until a
+  //           duration is picked or the user clicks anywhere else (dismiss)
+  // missed events flow back in the moment the freeze lifts
+  let hoverPause = false, menuLock = false, missedWhileHover = false;
+  let openMenu = null; // { box, who, cid }
+  const HOVER_SEL = ".chip.replayable, .banbox, .chip.c-sc"; // (feed-scoped — the pinned tray never scrolls, so it needs no freeze)
+  const flushMissed = () => { if (missedWhileHover && !paused) { missedWhileHover = false; rebuildFeed(); } };
+  const unfreeze = () => { hoverPause = false; if (!menuLock) flushMissed(); };
+  const closeMenu = (applied) => {
+    if (!openMenu) return;
+    if (applied) { openMenu.box.classList.remove("mini-menu"); openMenu.box.innerHTML = `<small style="color:var(--dim)">✓</small>`; }
+    else { // dismissed — put the plain ban button back
+      openMenu.box.classList.remove("mini-menu");
+      openMenu.box.innerHTML = `<button data-ban="${openMenu.who}" data-cid="${openMenu.cid}">ban</button>`;
+    }
+    openMenu = null;
+    menuLock = false;
+    unfreeze();
+  };
+  feed.addEventListener("mouseover", (ev) => { if (ev.target.closest(HOVER_SEL)) hoverPause = true; });
+  feed.addEventListener("mouseout", (ev) => { if (ev.target.closest(HOVER_SEL)) unfreeze(); });
+  feedwrap.addEventListener("mouseleave", unfreeze); // insurance against missed mouseouts
+  // clicking anywhere outside an open ban menu dismisses it (and unfreezes)
+  document.addEventListener("click", (ev) => {
+    if (openMenu && !ev.target.closest(".banbox.mini-menu")) closeMenu(false);
+  });
+
+  // ban from the feed: the duration choice IS the confirmation
+  feed.addEventListener("click", (ev) => {
+    // mod replay of a cooldown-skipped comment: chip click → apply anyway
+    const chip = ev.target.closest(".chip.replayable");
+    if (chip) {
+      const seq = Number(chip.closest(".row")?.dataset.seq);
+      const e = events.find((x) => x.seq === seq);
+      if (!e?.comment) return;
+      chip.classList.remove("replayable"); // also drops it from HOVER_SEL —
+      unfreeze();                          // so release the freeze explicitly
+      api("/admin/replay", { comment: e.comment }).then((r) => {
+        toast(r.ok ? `applied: ${r.action} ← ${e.comment.author}` : `replay: ${r.error || "no-op"}`);
+      });
+      return;
+    }
+    const d = ev.target.closest("button[data-dur]");
+    if (d) {
+      api("/admin/bans", { action: "ban", author: d.dataset.ban, channelId: d.dataset.cid, durationMinutes: Number(d.dataset.dur) })
+        .then(() => { toast(`${d.dataset.dur === "0" ? "banned" : `timeout ${d.dataset.dur}m`}: ${d.dataset.ban}`); refresh(); });
+      closeMenu(true); // duration picked → release the feed
+      return;
+    }
+    const b = ev.target.closest("button[data-ban]");
+    if (!b) return;
+    ev.stopPropagation(); // don't let the document dismiss-listener see the opening click
+    if (openMenu) closeMenu(false); // only one menu at a time
+    const who = esc(b.dataset.ban), cid = esc(b.dataset.cid || "");
+    const box = b.closest(".banbox");
+    box.classList.add("mini-menu");
+    box.innerHTML = [["10", "10m"], ["60", "1h"], ["0", "PERM"]]
+      .map(([v, l]) => `<button data-dur="${v}" data-ban="${who}" data-cid="${cid}">${l}</button>`).join("");
+    openMenu = { box, who, cid };
+    menuLock = true;
+  });
+
+  // ---- state poll: health LEDs, bans, pending ----
+  async function refresh() {
+    let st;
+    try { st = await api("/admin/state"); } catch { return; }
+    $("#led-stream").className = "led " + (st.health?.ffmpegUp ? "on" : "bad");
+    $("#led-scene").className = "led " + (st.health?.sceneReady ? "on" : "bad");
+    $("#s-phase").textContent = (st.health?.showState || "?").toUpperCase();
+    $("#s-phase").className = "v " + (st.health?.showState === "onair" ? "green" : "");
+    $("#s-song").textContent = st.music?.title ? `${st.music.title} — ${st.music.artist}` : "—";
+    $("#s-hold").textContent = st.holdCards ? "HOLD FOR REVIEW" : "AUTO (vision gate)";
+    $("#s-hold").className = "v " + (st.holdCards ? "red" : "green");
+    musicMode = st.music?.mode || "live";
+    $("#m-mode").textContent = musicMode === "intro" ? "→ LIVE" : "→ INTRO";
+    const nexts = [...(st.queue?.queue || []), ...(st.queue?.rotation || [])].slice(0, 3);
+    $("#upnext").innerHTML = nexts.length
+      ? "UP NEXT " + nexts.map((t) => `<b>${esc(t.title)}</b>`).join(" · ")
+      : "";
+
+    // vitals (top bar) + title badge
+    const v = st.vitals || {};
+    const quota = v.source === "youtube" ? ` · YT <b>${v.quotaUnits || 0}</b>/${v.quotaLimit || "?"}u` : "";
+    $("#vitals-bar").innerHTML = `<b>${v.processed || 0}</b> in · <b>${v.applied || 0}</b> applied · <b>${v.blocked || 0}</b> blocked${quota}`;
+    // authoritative callout tray (survives reloads; shared between mods)
+    awaiting = new Map((st.scAwait || []).filter((e) => e.comment?.id).map((e) => [e.comment.id, e]));
+    renderTray();
+    const pn = (st.pending || []).length + awaiting.size;
+    document.title = (pn ? `(${pn}) ` : "") + "HYPERLIVE · MOD CONSOLE";
+
+    const bans = $("#bans");
+    bans.innerHTML = (st.bans || []).map((b) => {
+      const left = b.expiresAt ? ` · ${Math.max(1, Math.ceil((b.expiresAt - Date.now()) / 60000))}m left` : "";
+      return `<div class="ban-chip"><span>${esc(b.author || b.channelId)}<small style="color:var(--dim)">${left}</small></span><button data-unban="${esc(b.author || "")}" data-cid="${esc(b.channelId || "")}">✕</button></div>`;
+    }).join("") || `<div id="none-pending">— NO BANS —</div>`;
+
+    const pend = st.pending || [];
+    $("#pending").innerHTML = pend.length ? pend.map((p) => `
+      <div class="pending-item" data-id="${esc(p.id)}">
+        <div class="ph"><span>${esc(p.kind.toUpperCase())} · ${esc(p.who)}</span><span>${new Date(p.ts).toLocaleTimeString()}</span></div>
+        ${p.screenshot ? `<img src="data:image/png;base64,${p.screenshot}" alt="pre-render">` : ""}
+        <div class="req">${esc(p.request || "")}</div>
+        ${p.vision ? `<div class="vv" style="color:${p.vision.safe ? "var(--green)" : "var(--red)"}">vision: ${p.vision.safe ? "safe" : "UNSAFE"} ${esc(p.vision.reason || "")}</div>` : ""}
+        <div class="row-btns"><button class="approve">▶ AIR IT</button><button class="reject">✕ REJECT</button></div>
+      </div>`).join("") : `<div id="none-pending">— QUEUE EMPTY —</div>`;
+  }
+  refresh();
+  setInterval(refresh, 5000);
+
+  // ---- show + music transport (the live.sh verbs) ----
+  let musicMode = "live";
+  $("#show-ctl").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-show]");
+    if (!b) return;
+    const [action, mode] = b.dataset.show.split(":");
+    if (action === "outro" && !confirm("Run the outro? Credits roll + music fades out.")) return;
+    const body = action === "standby" ? { action, mode } : { action, seconds: 10 };
+    api("/admin/show", body).then((r) => { toast(r.ok !== false ? `show → ${action}${mode ? ":" + mode : ""}` : `failed: ${r.error || "?"}`); setTimeout(refresh, 800); });
+  });
+  $("#music-ctl").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-music]");
+    if (!b) return;
+    const op = b.dataset.music;
+    const body = op === "skip" ? { op: "skip" }
+      : op === "fadeout" ? { op: "fade", to: 0, ms: 4000 }
+      : op === "fadein" ? { op: "fade", to: 100, ms: 2000 }
+      : { op: "mode", mode: musicMode === "live" ? "intro" : "live" };
+    api("/admin/music", body).then((r) => { toast(r.ok !== false ? `music: ${op}` : `music off / failed`); setTimeout(refresh, 800); });
+  });
+
+  $("#bans").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-unban]");
+    if (!b) return;
+    api("/admin/bans", { action: "unban", author: b.dataset.unban, channelId: b.dataset.cid }).then(() => { toast("unbanned"); refresh(); });
+  });
+  $("#ban-form").addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const v = $("#ban-input").value.trim();
+    if (!v) return;
+    const body = v.startsWith("UC") && v.length > 20 ? { action: "ban", channelId: v } : { action: "ban", author: v };
+    body.durationMinutes = Number($("#ban-dur").value) || 0;
+    api("/admin/bans", body).then(() => { $("#ban-input").value = ""; toast(`banned ${v}`); refresh(); });
+  });
+
+  // realtime stage monitor (YouTube's preview is ~30s behind; this is NOW)
+  const monitor = $("#monitor");
+  monitor.onerror = () => monitor.classList.add("stale");
+  monitor.onload = () => monitor.classList.remove("stale");
+  const pollMonitor = () => { monitor.src = "/admin/stage.png?t=" + Date.now(); };
+  pollMonitor();
+  setInterval(pollMonitor, 5000);
+
+  // click the thumbnail → pop-out live player (MJPEG stream of the broadcast
+  // frames). Clearing src on close drops the connection server-side.
+  const liveModal = $("#live-modal"), liveImg = $("#live-img"), liveCap = $("#live-cap");
+  const openStream = (src, capHtml) => { liveCap.innerHTML = capHtml; liveImg.src = src + "?t=" + Date.now(); liveModal.dataset.open = "true"; };
+  const openLive = () => openStream("/admin/monitor.mjpeg", '<b>●</b> LIVE MONITOR — the broadcast’s own frames, video only · click or ESC to close');
+  const openPreviewTwin = () => openStream("/admin/preview.mjpeg", '<span style="color:var(--cyan)">◌</span> OFF-AIR PREVIEW — a twin of the scene, NOT the broadcast · click or ESC to close');
+  const closeLive = () => { liveModal.dataset.open = "false"; liveImg.src = ""; };
+  monitor.addEventListener("click", openLive);
+  liveModal.addEventListener("click", closeLive);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && liveModal.dataset.open === "true") closeLive(); });
+  // bookmarkable pop-out — open AFTER load (an endless MJPEG <img> would
+  // otherwise hold the load event hostage and spin the tab forever)
+  if (location.hash === "#live") window.addEventListener("load", () => setTimeout(openLive, 50));
+
+  $("#pending").addEventListener("click", (ev) => {
+    const item = ev.target.closest(".pending-item");
+    if (!item) return;
+    const id = item.dataset.id;
+    if (ev.target.closest(".approve")) api(`/admin/pending/${id}`, { action: "approve" }).then((r) => { toast(r.ok ? "ON AIR" : `air failed: ${r.error || "?"}`); refresh(); });
+    if (ev.target.closest(".reject")) api(`/admin/pending/${id}`, { action: "reject" }).then(() => { toast("rejected"); refresh(); });
+  });
+
+  // ---- USERS view: directory of everyone who interacted + per-user controls --
+  let view = "feed", currentUser = null, currentUserData = null, usersTimer = null;
+  const fmtAgo = (iso) => {
+    if (!iso) return "—";
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    return s < 60 ? `${s | 0}s` : s < 3600 ? `${(s / 60) | 0}m` : `${(s / 3600) | 0}h`;
+  };
+  function setView(v) {
+    view = v;
+    for (const [id, name] of [["#v-feed", "feed"], ["#v-users", "users"], ["#v-autos", "autos"]]) {
+      $(id).classList.toggle("active", v === name);
+    }
+    $("#feedwrap").style.display = v === "feed" ? "" : "none";
+    $("#userswrap").style.display = v === "users" ? "" : "none";
+    $("#autowrap").style.display = v === "autos" ? "" : "none";
+    clearInterval(usersTimer);
+    if (v === "users") {
+      loadUsers();
+      usersTimer = setInterval(() => (currentUser ? loadUser(currentUser) : loadUsers()), 5000);
+    } else { currentUser = null; }
+    if (v === "autos") loadAutos();
+  }
+  $("#v-feed").addEventListener("click", () => setView("feed"));
+  $("#v-users").addEventListener("click", () => setView("users"));
+  $("#v-autos").addEventListener("click", () => setView("autos"));
+
+  // ---- AUTOMATIONS view: event → animation bindings (builtin + custom) ----
+  async function loadAutos() {
+    const r = await api("/admin/automations").catch(() => null);
+    if (!r?.ok || view !== "autos") return;
+    const builtinRows = r.builtins.map((a) => `
+      <div class="arow" data-key="${esc(a.key)}">
+        <div><div class="alabel">${esc(a.label)}</div><div class="adesc">${esc(a.desc)}</div></div>
+        <select data-style="${esc(a.key)}" ${a.styles.length < 2 ? "disabled" : ""}>
+          ${a.styles.map((s) => `<option value="${esc(s)}" ${s === a.style ? "selected" : ""}>${esc(s)}</option>`).join("")}
+        </select>
+        <button class="btn" data-prev-key="${esc(a.key)}" title="fire it on the stage with sample data — watch the monitor">▶</button>
+        <div class="atoggle ${a.enabled ? "on" : "off"}" data-toggle="${esc(a.key)}">${a.enabled ? "● ON" : "○ OFF"}</div>
+      </div>`).join("");
+    const customRows = r.custom.map((c) => `
+      <div class="arow" data-id="${esc(c.id)}">
+        <div><div class="alabel">${esc(c.label)}</div><div class="adesc">on <b>${esc(c.on)}</b> → ${esc(c.action)} ${esc(JSON.stringify(c.params))}</div></div>
+        <button class="btn danger" data-del="${esc(c.id)}">✕ DELETE</button>
+        <button class="btn" data-prev-id="${esc(c.id)}" title="fire it on the stage with sample data">▶</button>
+        <div class="atoggle ${c.enabled ? "on" : "off"}" data-ctoggle="${esc(c.id)}">${c.enabled ? "● ON" : "○ OFF"}</div>
+      </div>`).join("");
+    $("#autos-list").innerHTML = `
+      <h2>BUILT-IN RECOGNITIONS</h2>${builtinRows}
+      <h2>CUSTOM — ADD YOUR OWN</h2>${customRows || ""}
+      <div class="arow" id="auto-add" style="grid-template-columns:1fr">
+        <div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <input id="ca-label" placeholder="name…" style="flex:1;min-width:120px;background:#0c0f0c;border:1px solid var(--line);color:var(--txt);font:11px var(--mono);padding:6px 8px;border-radius:3px">
+            <span class="t">on</span>
+            <select id="ca-on">${Object.entries(r.events).map(([k, d]) => `<option value="${esc(k)}" title="${esc(d)}">${esc(k)}</option>`).join("")}</select>
+            <span class="t">→</span>
+            <select id="ca-action">${r.actions.map((a) => `<option>${esc(a)}</option>`).join("")}</select>
+            <button class="btn" id="ca-add">+ ADD</button>
+          </div>
+          <textarea id="ca-params" placeholder='params JSON — placeholders fill from the event: {"text":"{who} sent {amount}!","tier":"large"}' style="width:100%;height:54px;margin-top:6px;background:#0c0f0c;border:1px solid var(--line);color:var(--txt);font:11px var(--mono);padding:6px;border-radius:3px;resize:vertical"></textarea>
+          <div class="adesc">placeholders: {who} {text} {amount} {theme} {count} · fires through the same allowlisted scene actions as everything else</div>
+        </div>
+      </div>`;
+  }
+  $("#autos-list").addEventListener("click", async (ev) => {
+    const prevK = ev.target.closest("[data-prev-key]");
+    const prevI = ev.target.closest("[data-prev-id]");
+    if (prevK || prevI) {
+      // open the off-air twin first (its stream boots the twin), then fire —
+      // nothing here ever touches the broadcast
+      openPreviewTwin();
+      const body = prevK ? { key: prevK.dataset.prevKey } : { id: prevI.dataset.prevId };
+      const r = await api("/admin/automations/preview", body);
+      toast(r.ok ? `previewing ${r.fired} (off-air)` : `preview failed: ${r.error || "?"}`);
+      if (!r.ok) closeLive();
+      return;
+    }
+    const del = ev.target.closest("[data-del]");
+    if (del) {
+      if (!confirm("Delete this custom automation?")) return;
+      await api("/admin/automations/custom", { id: del.dataset.del, remove: true });
+      toast("deleted");
+      return loadAutos();
+    }
+    const ct = ev.target.closest("[data-ctoggle]");
+    if (ct) {
+      await api("/admin/automations/custom", { id: ct.dataset.ctoggle, enabled: !ct.classList.contains("on") });
+      return loadAutos();
+    }
+    const t = ev.target.closest("[data-toggle]");
+    if (t) {
+      const on = t.classList.contains("on");
+      const r = await api("/admin/automations", { key: t.dataset.toggle, enabled: !on });
+      toast(r.ok ? `${t.dataset.toggle}: ${!on ? "on" : "off"}` : `failed: ${r.error || "?"}`);
+      return loadAutos();
+    }
+    if (ev.target.closest("#ca-add")) {
+      let params = {};
+      const raw = $("#ca-params").value.trim();
+      if (raw) { try { params = JSON.parse(raw); } catch { return toast("params: invalid JSON"); } }
+      const r = await api("/admin/automations/custom", { label: $("#ca-label").value.trim(), on: $("#ca-on").value, action: $("#ca-action").value, params });
+      toast(r.ok ? `added: ${r.automation.label}` : `failed: ${r.error || "?"}`);
+      if (r.ok) loadAutos();
+    }
+  });
+  $("#autos-list").addEventListener("change", async (ev) => {
+    const s = ev.target.closest("select[data-style]");
+    if (!s) return;
+    const r = await api("/admin/automations", { key: s.dataset.style, style: s.value });
+    toast(r.ok ? `${s.dataset.style} → ${s.value}` : `failed: ${r.error || "?"}`);
+    loadAutos();
+  });
+
+  // the toolbar filter applies here too: chips → users with that kind of
+  // activity (BLOCKED also matches currently banned/muted), search → name/id
+  let lastUsers = [];
+  function userPasses(u) {
+    if (filter !== "all") {
+      const g = GROUPS[filter] || [];
+      const hasActivity = g.some((s) => u.stages[s]);
+      const statusMatch = filter === "blocked" && (u.banned || u.muted);
+      if (!hasActivity && !statusMatch) return false;
+    }
+    if (search && !(u.author.toLowerCase().includes(search) || (u.channelId || "").toLowerCase().includes(search))) return false;
+    return true;
+  }
+  function renderUsers() {
+    if (view !== "users" || currentUser) return;
+    $("#user-detail").style.display = "none";
+    const ul = $("#users-list");
+    ul.style.display = "";
+    const shown = lastUsers.filter(userPasses);
+    ul.innerHTML = shown.map((u) => `
+      <div class="urow" data-u="${esc(u.author)}">
+        ${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : `<span class="uavatar"></span>`}
+        <span class="who">${esc(u.author)}${u.banned ? '<span class="ubadge b">BANNED</span>' : ""}${u.muted ? '<span class="ubadge m">MUTED</span>' : ""}${u.superchats ? '<span class="ubadge" style="color:var(--cyan);border-color:#1c4b56">$' + u.superchats + "</span>" : ""}</span>
+        <span class="t">${u.msgs} msg${u.msgs === 1 ? "" : "s"}</span>
+        <span class="t">✓${u.stages.applied || 0} applied · ✗${(u.stages.blocked || 0) + (u.stages.banned || 0) + (u.stages.muted || 0)} dropped</span>
+        <span class="t">${fmtAgo(u.last)} ago</span>
+      </div>`).join("") || `<div id="none-pending">— ${lastUsers.length ? "NO MATCHES" : "NO USERS YET"} —</div>`;
+  }
+  async function loadUsers() {
+    const r = await api("/admin/users").catch(() => null);
+    if (!r?.ok) return;
+    lastUsers = r.users;
+    renderUsers();
+  }
+
+  async function loadUser(author) {
+    const r = await fetch(`/admin/user?author=${encodeURIComponent(author)}`).then((x) => x.json()).catch(() => null);
+    if (!r?.ok || view !== "users") return;
+    currentUser = author;
+    currentUserData = r.user;
+    const u = r.user;
+    $("#users-list").style.display = "none";
+    const d = $("#user-detail");
+    d.style.display = "";
+    const ctl = [`<button class="btn" data-uact="back">← ALL USERS</button>`];
+    ctl.push(u.muted
+      ? `<button class="btn" data-uact="unmute">🔊 UNMUTE</button>`
+      : `<button class="btn" data-uact="mute" title="messages stay visible here but can't trigger anything">🔇 MUTE</button>`);
+    if (u.banned) ctl.push(`<button class="btn" data-uact="unban">♻ UNBAN</button>`);
+    else ctl.push(
+      `<button class="btn danger" data-uact="kick" title="10-minute ban">⏏ KICK 10m</button>`,
+      `<button class="btn danger" data-uact="timeout">⏱ TIMEOUT 1h</button>`,
+      `<button class="btn danger" data-uact="ban">⛔ BAN</button>`,
+    );
+    d.innerHTML = `
+      <div class="udhead">
+        ${u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : `<span class="uavatar" style="width:44px;height:44px"></span>`}
+        <div>
+          <div style="font-size:16px;color:#cfe8cf">${esc(u.author)}${u.banned ? '<span class="ubadge b">BANNED</span>' : ""}${u.muted ? '<span class="ubadge m">MUTED</span>' : ""}</div>
+          <div class="t" style="font-size:11px">${u.channelId ? esc(u.channelId) + " · " : ""}${u.msgs} msgs · ✓${u.stages.applied || 0} applied · ✗${u.stages.blocked || 0} blocked · ${u.superchats || 0} superchat${u.superchats === 1 ? "" : "s"} · first seen ${fmtAgo(u.first)} ago · last ${fmtAgo(u.last)} ago</div>
+        </div>
+      </div>
+      <div class="udctl">${ctl.join("")}</div>
+      <div id="ud-events"></div>`;
+    const ev = $("#ud-events");
+    for (const e of (u.events || []).slice().reverse()) ev.appendChild(buildRow(e));
+  }
+
+  $("#users-list").addEventListener("click", (ev) => {
+    const r = ev.target.closest(".urow");
+    if (r) loadUser(r.dataset.u);
+  });
+  $("#user-detail").addEventListener("click", async (ev) => {
+    const b = ev.target.closest("button[data-uact]");
+    if (!b || !currentUser) return;
+    const act = b.dataset.uact;
+    if (act === "back") { currentUser = null; currentUserData = null; $("#user-detail").style.display = "none"; loadUsers(); return; }
+    const ACTS = {
+      mute: { action: "mute" }, unmute: { action: "unmute" },
+      ban: { action: "ban" }, unban: { action: "unban" },
+      kick: { action: "ban", durationMinutes: 10 }, timeout: { action: "ban", durationMinutes: 60 },
+    };
+    await api("/admin/bans", { author: currentUser, channelId: currentUserData?.channelId || "", ...ACTS[act] });
+    toast(`${act}: ${currentUser}`);
+    loadUser(currentUser);
+    refresh();
+  });
+
+  $("#c-send").addEventListener("click", () => {
+    const html = $("#c-html").value.trim();
+    if (!html) return toast("compose: html required");
+    api("/admin/compose", { kind: $("#c-kind").value, html, who: $("#c-who").value || "moderator" })
+      .then((r) => { toast(r.ok ? "previewed → queue" : `rejected: ${r.error || "?"}`); if (r.ok) $("#c-html").value = ""; refresh(); });
+  });
+
+  // guarded kill switch: first click arms, second within 3s fires
+  let armed = 0;
+  $("#kill").addEventListener("click", () => {
+    const now = Date.now();
+    if (now - armed > 3000) {
+      armed = now;
+      $("#kill").classList.add("armed");
+      $("#kill").textContent = "◉ CONFIRM KILL";
+      setTimeout(() => { $("#kill").classList.remove("armed"); $("#kill").textContent = "◉ KILL GENERATED"; }, 3000);
+      return;
+    }
+    armed = 0;
+    $("#kill").classList.remove("armed");
+    $("#kill").textContent = "◉ KILL GENERATED";
+    api("/admin/clear", {}).then(() => toast("cleared all generated content"));
+  });
+})();
+</script>
+</body>
+</html>

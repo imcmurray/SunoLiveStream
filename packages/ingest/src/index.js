@@ -13,6 +13,11 @@ import { createMoodEngine } from "./mood.js";
 import { createReactions } from "./reactions.js";
 import { createVotes } from "./votes.js";
 import { createMusic, parseSunoShare, isLikeCommand, hasHeart } from "./music.js";
+import { authorCard, parseCardCommand } from "./card-author.js";
+import { isBanned, isMuted, loadBans } from "./bans.js";
+import { automation, loadAutomations, setAutomationPoster, emitAutomation, superchatDirective } from "./automations.js";
+import { startAdmin, publishFeed, enqueuePending, previewMarkup, setVitalsProvider, setReplayHandler } from "./admin.js";
+import { unitsSpent } from "./quota.js";
 import { simulatorSource, liveSimulatorSource } from "./simulator.js";
 import { youtubeSource } from "./youtube.js";
 import { createStreamLikes } from "./stream-likes.js";
@@ -21,7 +26,7 @@ import { fetchT } from "./fetch-timeout.js";
 const moderator = createModerator();
 const director = createDirector();
 const moodState = createMoodState({ windowMs: config.moodWindowMs });
-const reactions = createReactions({ postMutate, log: console.log });
+const reactions = createReactions({ postMutate, log: console.log, welcome: () => automation("welcome") });
 const votes = createVotes({ postMutate, log: console.log });
 const music = createMusic({ baseUrl: config.musicUrl });
 
@@ -30,6 +35,9 @@ let applied = 0;
 let blocked = 0;
 
 async function audit(entry) {
+  // the dashboard's live feed rides the same call (in-process bus); the file
+  // is durable history, the bus is the moderator's live view
+  if (config.dashboard) publishFeed(entry);
   const line = JSON.stringify({ t: new Date().toISOString(), ...entry });
   try {
     await mkdir(path.dirname(config.auditLog), { recursive: true });
@@ -42,6 +50,7 @@ async function audit(entry) {
 async function postMutate(directive) {
   const res = await fetchT(config.mutateUrl, {
     method: "POST",
+    signal: AbortSignal.timeout(5000), // local control plane — fail fast, don't stall the pipeline
     headers: { "content-type": "application/json" },
     body: JSON.stringify(directive),
   });
@@ -49,8 +58,21 @@ async function postMutate(directive) {
   return res.json();
 }
 
+// superchat → recognition tier: explicit tier strings (simulator) or
+// amount/ytTier (real YouTube)
+function superchatTier(sc) {
+  if (sc.tier === "large" || sc.tier === "medium") return sc.tier;
+  const amt = parseFloat(String(sc.amount || "").replace(/[^0-9.]/g, "")) || 0;
+  const yt = Number(sc.ytTier) || 0;
+  if (amt >= 20 || yt >= 5) return "large";
+  if (amt >= 5 || yt >= 3) return "medium";
+  return "small";
+}
+
 // throttled "typed → on-scene" latency readout (excludes YouTube's broadcast buffer)
 let lastDelayAt = 0;
+// one viewer card at a time, with a global cooldown (the slot shows one card)
+let lastCardAt = 0;
 function reportDelay(comment) {
   if (!config.showDelay || !comment.ts) return;
   const now = Date.now();
@@ -62,6 +84,20 @@ function reportDelay(comment) {
 async function handle(comment) {
   processed += 1;
 
+  // banned viewers are dropped before ANY processing — they can't influence
+  // the stage at all (local-only "kick"; we never touch YouTube's chat)
+  if (isBanned(comment)) {
+    blocked += 1;
+    await audit({ stage: "banned", comment: { author: comment.author, channelId: comment.channelId, text: comment.text } });
+    return;
+  }
+  // muted viewers stay VISIBLE to the moderator (feed shows the message) but
+  // nothing they say can trigger directives, cards, music, or votes
+  if (isMuted(comment)) {
+    await audit({ stage: "muted", comment: { author: comment.author, channelId: comment.channelId, text: comment.text } });
+    return;
+  }
+
   const mod = await moderator.moderate(comment);
   if (!mod.allowed) {
     blocked += 1;
@@ -72,6 +108,26 @@ async function handle(comment) {
 
   // feed the Collective Mood Engine (only moderated comments reach the aggregate)
   moodState.record(comment);
+
+  // Superchat recognition (an automation): fired DETERMINISTICALLY before the
+  // director — a paid message must never go unacknowledged. Style is
+  // dashboard-configurable: golden card / classic shoutout / burst only.
+  let scRecognized = false;
+  if (comment.superchat) {
+    const auto = automation("superchat");
+    const tier = superchatTier(comment.superchat);
+    if (auto.enabled) {
+      scRecognized = true;
+      const directive = superchatDirective(auto.style, { who: comment.author, text: comment.text, amount: comment.superchat.amount || "", tier });
+      if (directive.action === "superchatCard" || directive.action === "addShoutout") directive.params.avatar = comment.avatar || "";
+      await postMutate(directive).catch(() => {});
+      reportDelay(comment);
+      console.log(`  ★ SUPERCHAT ${comment.author} ${comment.superchat.amount || ""} (${tier}, ${auto.style})`);
+      await audit({ stage: "superchat", comment, tier, style: auto.style });
+    }
+    // custom automations on this event fire regardless of the builtin
+    emitAutomation("superchat", { who: comment.author, text: comment.text, amount: comment.superchat.amount || "" });
+  }
 
   // Music: a Suno share link is CONSUMED as a queue request; "!like" is CONSUMED
   // as a like for the current song; a heart/👍 in normal chat also likes the
@@ -98,6 +154,53 @@ async function handle(comment) {
     if (hasHeart(comment.text)) music.like(comment.author).catch(() => {}); // side-effect, fall through
   }
 
+  // Tier 2 viewer cards: "!card <description>" is CONSUMED — Claude authors a
+  // small HTML card, the streamer pre-renders + vision-gates it, and only then
+  // does it reach the sandboxed on-stage slot (platform-directions §7).
+  if (config.cards) {
+    const want = parseCardCommand(comment.text);
+    if (want) {
+      const now = Date.now();
+      if (now - lastCardAt < config.cardCooldownMs) {
+        console.log(`  ▦ card  (cooldown ${Math.ceil((config.cardCooldownMs - (now - lastCardAt)) / 1000)}s) ${comment.author}`);
+        await audit({ stage: "card_cooldown", comment });
+        return;
+      }
+      lastCardAt = now;
+      console.log(`  ▦ card  ${comment.author} → "${want}" (authoring…)`);
+      const html = await authorCard(want, comment.author);
+      // HOLD mode: park it (with its off-air screenshot) for a moderator
+      // instead of airing on vision-pass — the dashboard approves/rejects
+      if (html && config.holdCards) {
+        const pv = await previewMarkup("card", html, comment.author).catch((e) => ({ ok: false, error: e.message }));
+        if (pv.ok) {
+          enqueuePending({ kind: "card", who: comment.author, request: want, html, screenshot: pv.screenshot, vision: pv.vision });
+          console.log(`  ▦ card  HELD for review ← ${comment.author}`);
+          await audit({ stage: "card_held", comment, request: want });
+        } else {
+          console.log(`  ▦ card  rejected at preview [${pv.error || "?"}]`);
+          await audit({ stage: "card", comment, request: want, ok: false, error: pv.error });
+        }
+        return;
+      }
+      let result = { ok: false, error: "authoring failed" };
+      if (html) {
+        try {
+          const res = await fetch(config.cardUrl, {
+            method: "POST",
+            signal: AbortSignal.timeout(30000), // preview render + vision check take a while
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ html, who: comment.author, source: "viewer" }),
+          });
+          result = await res.json().catch(() => ({ ok: res.ok }));
+        } catch (e) { result = { ok: false, error: e.message }; }
+      }
+      console.log(result.ok ? `  ▦ card  LIVE ← ${comment.author}` : `  ▦ card  rejected [${result.error || "?"}]`);
+      await audit({ stage: "card", comment, request: want, ok: !!result.ok, error: result.error });
+      return;
+    }
+  }
+
   // Vote ballots ("!theme:x") are CONSUMED here — they drive a vote round and
   // are never shown as a message or sent to the director.
   if (config.votes) {
@@ -114,6 +217,11 @@ async function handle(comment) {
   const fired = config.reactions ? await reactions.handle(comment).catch(() => []) : [];
 
   const dec = await director.decide(comment);
+  // a superchat already got its recognition card — don't double-shoutout
+  if (!dec.skip && dec.directive.action === "addShoutout" && scRecognized) {
+    await audit({ stage: "skipped", comment, reason: "superchat already recognized" });
+    return;
+  }
   if (dec.skip) {
     console.log(`  · skip  [${dec.skip}] ${comment.author}: ${comment.text}`);
     if (fired.length) reportDelay(comment); // a reaction still landed on screen
@@ -142,6 +250,35 @@ async function main() {
   console.log(`[ingest] source=${config.source} → ${config.mutateUrl}`);
   console.log(`[ingest] director: ${director.engine}`);
   console.log(`[ingest] moderation: rate=${config.ratePerMin}/min, blocklist=on, llm=${config.moderationLLM}`);
+  await loadAutomations();
+  setAutomationPoster(postMutate); // custom automations + previews fire through the normal bus
+  const banCount = await loadBans();
+  if (banCount) console.log(`[ingest] ban list: ${banCount} entr${banCount === 1 ? "y" : "ies"}`);
+  setVitalsProvider(() => ({
+    processed, applied, blocked,
+    quotaUnits: unitsSpent(),
+    quotaLimit: config.yt.quotaLimit,
+    source: config.source,
+  }));
+  // dashboard replay: mod overrides a cooldown skip — intent re-runs and the
+  // result lands in the feed through the normal audit path
+  setReplayHandler(async (comment) => {
+    const dec = await director.decide(comment, Date.now(), { ignoreCooldown: true });
+    if (dec.skip) return { ok: false, error: dec.skip };
+    if (dec.directive.action === "addShoutout" && comment.avatar) dec.directive.params.avatar = comment.avatar;
+    try {
+      const out = await postMutate(dec.directive);
+      applied += 1;
+      console.log(`  ✓ APPLY ${dec.directive.action} (mod replay) ← ${comment.author}`);
+      await audit({ stage: "applied", comment, directive: dec.directive, out, replay: true });
+      return { ok: true, action: dec.directive.action };
+    } catch (e) {
+      await audit({ stage: "error", comment, directive: dec.directive, error: e.message });
+      return { ok: false, error: e.message };
+    }
+  });
+  const admin = config.dashboard ? startAdmin({ log: console.log }) : null;
+  if (config.holdCards) console.log("[ingest] HOLD_CARDS=on — viewer cards queue for moderator approval");
   if (config.maxEvents) console.log(`[ingest] demo mode: stopping after ${config.maxEvents} events`);
 
   const source = config.source === "youtube" ? youtubeSource()
@@ -158,20 +295,25 @@ async function main() {
     ? createStreamLikes({ postMutate, log: console.log }) : null;
   if (streamLikes) streamLikes.start();
 
-  process.on("SIGINT", () => {
+  const shutdown = (label) => {
     if (moodEngine) moodEngine.stop();
     if (streamLikes) streamLikes.stop();
     votes.stop();
-    console.log(`\n[ingest] stopping. processed=${processed} applied=${applied} blocked=${blocked}`);
+    if (admin) admin.close();
+    console.log(`\n[ingest] ${label}. processed=${processed} applied=${applied} blocked=${blocked}`);
     process.exit(0);
-  });
+  };
+  process.on("SIGINT", () => shutdown("stopping"));
+  process.on("SIGTERM", () => shutdown("stopping")); // live.sh stop sends SIGTERM
 
   for await (const comment of source) {
     await handle(comment);
     if (config.maxEvents && processed >= config.maxEvents) break;
   }
 
-  console.log(`\n[ingest] done. processed=${processed} applied=${applied} blocked=${blocked}`);
+  // the source ended (demo maxEvents or simulator drained) — stop the timers
+  // too, or the process lingers as a zombie that looks alive to live.sh status
+  shutdown("done");
 }
 
 main().catch((e) => {

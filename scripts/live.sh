@@ -71,13 +71,14 @@ start() {
   [ -f "$LOG" ] && mv -f "$LOG" "$LOG.1" 2>/dev/null
   echo "[live] starting YouTube-chat ingest → $MUTATE_URL  (log: $LOG)"
   [ -n "$vid" ] && echo "[live] pinning ingest to stream: $vid"
+  echo "[live] mod dashboard → http://127.0.0.1:${ADMIN_PORT:-8090}/  (loopback; tunnel in for remote mods)"
   nohup env \
     SOURCE=youtube \
     MUTATE_URL="$MUTATE_URL" \
     MOOD_TICK_MS="$MOOD_TICK_MS" \
     YT_QUOTA_LIMIT="$QUOTA_LIMIT" \
     ${vid:+YT_VIDEO_ID="$vid"} \
-    node "$ENTRY" > "$LOG" 2>&1 &
+    node "$ENTRY" > "$LOG" 2>&1 &   # fresh log each start; the prior run was rotated to $LOG.1 above
   disown
   sleep 4
   status
