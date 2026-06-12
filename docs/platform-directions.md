@@ -178,6 +178,118 @@ and *if* a third direction gets real, that's the signal to graduate to the
 
 ---
 
+## 6. The stage is a *video source*, not necessarily our scene
+
+Everything above (§2–§4) treats the broadcast as **our browser scene, captured
+to RTMP**. That's one stage type. The bigger platform move is to recognize that
+the **interaction stack — ingest → moderation → director → dashboard,
+automations, superchats, bans — is completely independent of *what's on the
+main video*.** Someone should be able to stream their **game session, a live
+event camera, a desktop, another app** and still get the moderated,
+chat-driven HyperLive overlay + the mod console on top of it.
+
+This splits the kernel into two cleanly separable halves:
+
+```
+   ┌──────────── INTERACTION STACK (the HyperLive value) ────────────┐
+   │  ingest → moderation gate → director → {action,params}          │
+   │  dashboard · automations · superchats · bans · votes · mood      │
+   └───────────────────────────────┬─────────────────────────────────┘
+                                    ▼  drives only the OVERLAY
+   ┌──────────────────────── COMPOSITOR (the stage) ─────────────────┐
+   │   main source            +     HyperLive scene (transparent)    │
+   │   ├─ our browser scene         lower-thirds · alerts · cards ·   │
+   │   ├─ game capture              superchat recognition · ticker    │
+   │   ├─ event camera (RTMP/v4l2)  vote bars · now-playing           │
+   │   └─ desktop / another app                                       │
+   └───────────────────────────────┬─────────────────────────────────┘
+                                    ▼
+                          ffmpeg ──▶ RTMP / YouTube
+```
+
+**What this is, concretely:** today the scene IS the full frame. Make it an
+**alpha overlay layer** instead, and let the streamer composite `[main source]`
+under `[scene overlay]`. The scene already renders over a transparent root in a
+headless Chromium — the change is (a) a compositor step in the streamer with N
+inputs instead of one, and (b) a scene "overlay mode" that drops its own
+background so the main source shows through.
+
+**What stays identical:** the entire interaction stack. Chat still becomes
+vetted directives; the dashboard still bans/holds/previews; superchats still
+fire recognition cards; automations still bind events to overlay actions. None
+of it cares whether the pixels behind the overlay are a gradient, a game, or a
+camera.
+
+**Why this is HyperLive's lane, not OBS's.** OBS already composites a "browser
+source" over a game capture — but the overlay is static and the operator drives
+it by hand. HyperLive's overlay is **moderated, chat-driven, and run from a
+purpose-built mod console**: the value isn't the compositing, it's the safe
+interaction engine feeding it. The compositor is the commodity; the gate +
+director + dashboard are the product.
+
+**The safety story gets *easier*, not harder.** Viewer input still only ever
+touches the overlay scene through the same allowlist + sandbox (§7,
+`SECURITY.md`) — and now the blast radius is smaller: the worst a malicious
+directive can do is misbehave inside a transparent overlay, never the operator's
+game or camera feed, which the interaction stack can't address at all.
+
+**Two places to composite — and we built the cheap one first.**
+
+- **In-browser (built).** For any source the browser can render — a **YouTube
+  video**, a direct video/HLS URL, an image — the simplest path is to put the
+  source *inside the scene page* as a bottom layer and make the themed
+  background transparent. The existing screencast captures the composite as-is:
+  **zero ffmpeg changes, no alpha-capture problem.** This is the
+  `setStageSource` action (operator-only — allowlisted on `/mutate`, never
+  emitted by the director, so viewers can't set the source). A cross-origin
+  YouTube embed is an out-of-process iframe, and the CDP screencast composites
+  OOPIFs fine (the same path Tier-2/3 cards already rely on). Verified headless:
+  the video plays and is captured, the scene rides on top, the 11-char id
+  whitelist rejects injection. See `docs/overlay-mode.png`.
+- **In-ffmpeg (future).** For sources the browser *can't* host — a live game
+  capture, a hardware camera, another app's window — generalize the streamer's
+  single capture into a source list: `main` (v4l2 / RTMP ingest / x11grab
+  region) under `overlay` (the scene rendered over transparency), composited
+  with `ffmpeg -filter_complex overlay`. This needs the alpha-capable capture
+  the in-browser path sidesteps (a PNG/`webm`-alpha screencast or a CSS color
+  key). Same `setStageSource`-shaped control surface; different plumbing behind
+  it.
+
+**Then: source as a pack.** "YouTube co-watch", "game overlay", "event camera",
+"just-chatting" each become packs in the §2 sense — a source choice + the
+overlay widgets that suit it, reusing the whole interaction stack unchanged.
+
+**Operator surface (done): the STAGES view.** A stage is a persisted preset —
+`{kind: scene|youtube|video|image, source, theme}` — that compiles to a
+`setStageSource` (+ `transitionTheme`) directive. The dashboard's STAGES view
+lists builtin + operator-defined stages, **GO LIVE** switches the broadcast
+stage instantly (verified mid-show), and **▶** previews a stage off-air in the
+scene twin first. The registry (`stages.js`) mirrors the automations pattern:
+validated/allowlisted, count-capped, persisted, operator-only (never
+chat-reachable). This is the concrete answer to "let a mod set up and switch
+stages during an on-air event."
+
+**Audio (done).** `AUDIO_MODE=source` brings the PulseAudio null-sink up as
+Chromium's **default output** and points ffmpeg at its monitor — so a video
+stage source's sound is captured the same proven way the DJ's music is. The one
+wrinkle is YouTube: its IFrame player won't reliably produce audio in headless
+Chromium (it stays muted even when the API reports unmuted), so for a YouTube
+stage the streamer resolves the id → a direct progressive/HLS URL with `yt-dlp`
+and the scene plays *that* in a plain `<video>` (synced audio + video, via
+hls.js for live/HLS). Verified: a live YouTube stream captures at ~−12 dB, a VOD
+at ~−13 dB — clear, full-scale audio. (HLS from googlevideo sends no CORS
+headers, so the capture browser runs `--disable-web-security` in source mode —
+safe on this rig: the top frame runs only our own trusted JS, and the only
+untrusted content, viewer cards, stays in sandboxed iframes that flag doesn't
+touch.)
+
+This is the cleanest answer to *"how does someone stream **their** content on
+HyperLive?"* — they bring the stage; HyperLive brings the moderated crowd layer
+and the console to run it. **Status (2026-06-11): in-browser overlay prototyped
+and verified; ffmpeg compositing + audio are the next steps.**
+
+---
+
 ## 7. Comment-alters-the-stage: the three-tier mutation ladder
 
 The next platform experiment: let a viewer comment change the stage itself, not

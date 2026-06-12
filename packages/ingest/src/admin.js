@@ -20,6 +20,9 @@ import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { ban, unban, mute, unmute, listBans, listMutes, isBanned, isMuted } from "./bans.js";
 import { listAutomations, setAutomation, addCustom, updateCustom, buildPreviewDirectives } from "./automations.js";
+import { listStages, getStage, addStage, updateStage, removeStage, setActive, buildApplyDirectives, setTitleDefault, featuresOf, sourceKey } from "./stages.js";
+import { setActiveFeatures, activeFeatures } from "./features.js";
+import { captureAsset, listAssets, getAsset, setStars, removeAsset, markUsed } from "./assets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DASH_HTML = path.resolve(__dirname, "../../dashboard/index.html");
@@ -178,6 +181,8 @@ export function startAdmin({ log = console.log } = {}) {
           proxyGet(`${config.controlBase}/music/status`),
           proxyGet(`${config.controlBase}/music/queue`),
         ]);
+        const stages = listStages();
+        const activeStage = getStage(stages.active);
         return json(res, 200, {
           ok: true,
           bans: listBans(),
@@ -186,6 +191,9 @@ export function startAdmin({ log = console.log } = {}) {
           holdCards: config.holdCards,
           vitals: vitalsProvider(),
           scAwait: [...scAwait.values()],
+          stage: activeStage ? { id: activeStage.id, label: activeStage.label, kind: activeStage.kind } : null,
+          features: activeFeatures(),
+          assetCount: listAssets().length,
         });
       }
 
@@ -268,6 +276,27 @@ export function startAdmin({ log = console.log } = {}) {
         return json(res, 200, out);
       }
 
+      // ---- stage source (overlay mode): operator picks the main-stage video ----
+      if (route === "POST /admin/stage") {
+        const b = await readJson(req);
+        const kind = String(b.kind || "none").toLowerCase();
+        if (!["none", "off", "clear", "youtube", "yt", "video", "image"].includes(kind)) {
+          return json(res, 400, { ok: false, error: "kind must be none|youtube|video|image" });
+        }
+        // pass only the vetted fields; the scene re-validates id/url + builds via DOM
+        const params = { kind };
+        if (b.id) params.id = String(b.id).slice(0, 2048);
+        if (b.url) params.url = String(b.url).slice(0, 2048);
+        if (b.muted !== undefined) params.muted = !!b.muted;
+        const out = await fetch(`${config.controlBase}/mutate`, {
+          method: "POST", signal: AbortSignal.timeout(8000),
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "setStageSource", params }),
+        }).then((r) => r.json()).catch((e) => ({ ok: false, error: e.message }));
+        publishFeed({ stage: "stage_source", comment: { author: "operator", text: `source → ${kind}${params.id ? `:${params.id}` : params.url ? `:${params.url}` : ""}` } });
+        return json(res, 200, out);
+      }
+
       if (route === "POST /admin/bans") {
         const b = await readJson(req);
         const action = String(b.action || "ban");
@@ -326,6 +355,57 @@ export function startAdmin({ log = console.log } = {}) {
         return json(res, 200, { ok: true, fired: fired.join("+"), offair: b.live !== true });
       }
 
+      // ---- stages: presets for the main video + live switching ----
+      if (route === "GET /admin/stages") {
+        return json(res, 200, { ok: true, ...listStages() });
+      }
+      // global title-animation default (per-stage settings override it)
+      if (route === "POST /admin/stages/titles") {
+        const b = await readJson(req);
+        const out = await setTitleDefault(String(b.default || ""));
+        if (out.ok) publishFeed({ stage: "stage_source", comment: { author: "operator", text: `title default → ${out.titleDefault}` } });
+        return json(res, out.ok ? 200 : 400, out);
+      }
+      // add / edit / remove a custom stage
+      if (route === "POST /admin/stages/custom") {
+        const b = await readJson(req);
+        const def = { label: b.label, kind: b.kind, source: b.source, url: b.url, muted: b.muted, theme: b.theme, titles: b.titles, features: b.features, headline: b.headline, kicker: b.kicker, subhead: b.subhead, ticker: b.ticker, showTicker: b.showTicker, showVibe: b.showVibe };
+        let out, verb;
+        if (b.remove) { out = await removeStage(String(b.id || "")); verb = out.reset ? "reset" : "removed"; }
+        else if (b.id) { out = await updateStage(String(b.id), def); verb = "edited"; }
+        else { out = await addStage(def); verb = "added"; }
+        if (out.ok) publishFeed({ stage: "stage_source", comment: { author: "operator", text: `stage ${verb}: ${out.stage?.label || b.id}` } });
+        return json(res, out.ok ? 200 : 400, out);
+      }
+      // apply a stage LIVE (or preview it off-air with {preview:true})
+      if (route === "POST /admin/stages/apply") {
+        const b = await readJson(req);
+        const stage = getStage(String(b.id || ""));
+        if (!stage) return json(res, 404, { ok: false, error: "unknown stage" });
+        // LIVE apply: if the source is unchanged from what's already on air, skip
+        // the setStageSource directive so the video DOESN'T restart — we just
+        // transition titles/features/ticker. (Always re-render the source for a
+        // preview; the twin needs it.) {reload:true} forces a source reload.
+        const liveNow = getStage(listStages().active);
+        const skipSource = b.preview !== true && b.reload !== true && sourceKey(liveNow) === sourceKey(stage);
+        const directives = buildApplyDirectives(stage, { skipSource });
+        const target = b.preview === true ? `${config.controlBase}/preview/mutate` : `${config.controlBase}/mutate`;
+        let fired = [];
+        for (const d of directives) {
+          const r = await fetch(target, {
+            method: "POST", signal: AbortSignal.timeout(30000), // yt-dlp resolve + twin cold-start
+            headers: { "content-type": "application/json" }, body: JSON.stringify(d),
+          }).then((x) => x.json()).catch((e) => ({ ok: false, error: e.message }));
+          if (r.ok === false) return json(res, 502, { ok: false, error: r.error || "stage target rejected" });
+          fired.push(d.action);
+        }
+        // a LIVE switch also re-shapes the interaction layer to this stage's
+        // features (votes/superchats/effects/welcome/popups); a preview doesn't
+        if (b.preview !== true) { await setActive(stage.id); setActiveFeatures(featuresOf(stage)); }
+        publishFeed({ stage: "stage_source", comment: { author: "operator", text: `${b.preview ? "preview" : "→ STAGE"}: ${stage.label}` } });
+        return json(res, 200, { ok: true, applied: stage.id, fired: fired.join("+"), offair: b.preview === true });
+      }
+
       // ---- user directory: everyone who has interacted this session ----
       if (route === "GET /admin/users") {
         const list = [...users.values()].map(userSummary)
@@ -338,6 +418,21 @@ export function startAdmin({ log = console.log } = {}) {
         return json(res, 200, { ok: true, user: { ...userSummary(u), events: u.events } });
       }
 
+      // edit a queued card in place: re-render the new markup off-air and update
+      // this item's html + thumbnail + vision (so AIR IT airs the edited version)
+      if (req.method === "POST" && /^\/admin\/pending\/[\w-]+\/update$/.test(url.pathname)) {
+        const id = url.pathname.split("/")[3];
+        const item = pending.get(id);
+        if (!item) return json(res, 404, { ok: false, error: "no such pending item" });
+        const b = await readJson(req);
+        const html = String(b.html || "");
+        if (!html.trim()) return json(res, 400, { ok: false, error: "html required" });
+        const pv = await previewMarkup(item.kind, html, item.who);
+        if (!pv.ok) return json(res, 422, { ok: false, error: pv.error || `preview failed (${pv.status})` });
+        item.html = html; item.screenshot = pv.screenshot; item.vision = pv.vision;
+        return json(res, 200, { ok: true, screenshot: pv.screenshot, vision: pv.vision });
+      }
+
       if (req.method === "POST" && /^\/admin\/pending\/[\w-]+$/.test(url.pathname)) {
         const id = url.pathname.split("/").pop();
         const item = pending.get(id);
@@ -346,6 +441,8 @@ export function startAdmin({ log = console.log } = {}) {
         pending.delete(id);
         if (String(b.action) === "approve") {
           const out = await airApproved(item);
+          // a card that actually aired becomes a reusable library asset
+          if (out.ok) captureAsset({ kind: item.kind, html: item.html, who: item.who, screenshot: item.screenshot }).catch(() => {});
           publishFeed({ stage: out.ok ? "approved" : "approve_failed", kind: item.kind, comment: { author: item.who, text: item.request || "" }, error: out.error });
           return json(res, out.ok ? 200 : 502, out);
         }
@@ -362,6 +459,34 @@ export function startAdmin({ log = console.log } = {}) {
         if (!pv.ok) return json(res, 422, { ok: false, error: pv.error || `preview failed (${pv.status})` });
         const entry = enqueuePending({ kind, who: String(b.who || "moderator"), request: "(composed in dashboard)", html, screenshot: pv.screenshot, vision: pv.vision });
         return json(res, 200, { ok: true, id: entry.id });
+      }
+
+      // ---- asset library: previously-aired cards, reusable + star-rated ----
+      if (route === "GET /admin/assets") {
+        return json(res, 200, { ok: true, assets: listAssets() });
+      }
+      // star rating / delete
+      if (route === "POST /admin/assets") {
+        const b = await readJson(req);
+        const out = b.remove ? await removeAsset(String(b.id || "")) : await setStars(String(b.id || ""), b.stars);
+        return json(res, out.ok ? 200 : 404, out);
+      }
+      // re-air a saved asset (its markup already passed the gate when first aired;
+      // air as operator, the vision gate still re-checks when a key is present)
+      if (route === "POST /admin/assets/reuse") {
+        const b = await readJson(req);
+        const a = getAsset(String(b.id || ""));
+        if (!a) return json(res, 404, { ok: false, error: "unknown asset" });
+        const out = await airApproved({ kind: a.kind, html: a.html, who: a.who });
+        if (out.ok) markUsed(a.id);
+        publishFeed({ stage: out.ok ? "approved" : "approve_failed", kind: a.kind, comment: { author: a.who, text: `reused: ${a.label}` }, error: out.error });
+        return json(res, out.ok ? 200 : 502, out);
+      }
+      // raw markup of one asset, for the "tweak" → load-into-compose action
+      if (route === "GET /admin/asset") {
+        const a = getAsset(String(url.searchParams.get("id") || ""));
+        if (!a) return json(res, 404, { ok: false, error: "unknown asset" });
+        return json(res, 200, { ok: true, id: a.id, kind: a.kind, html: a.html, who: a.who });
       }
 
       // mod clicked a cooldown-skipped row: re-run it through the director
@@ -394,7 +519,7 @@ export function startAdmin({ log = console.log } = {}) {
     }
   });
 
-  server.listen(config.adminPort, "127.0.0.1", () => {
+  server.listen(config.adminPort, config.adminBind, () => {
     log(`[admin] dashboard → http://127.0.0.1:${config.adminPort}/  (loopback only — tunnel in for remote mods)`);
   });
   return server;

@@ -16,6 +16,9 @@ import { createMusic, parseSunoShare, isLikeCommand, hasHeart } from "./music.js
 import { authorCard, parseCardCommand } from "./card-author.js";
 import { isBanned, isMuted, loadBans } from "./bans.js";
 import { automation, loadAutomations, setAutomationPoster, emitAutomation, superchatDirective } from "./automations.js";
+import { loadStages, listStages, getStage, featuresOf } from "./stages.js";
+import { getFeature, setActiveFeatures } from "./features.js";
+import { loadAssets } from "./assets.js";
 import { startAdmin, publishFeed, enqueuePending, previewMarkup, setVitalsProvider, setReplayHandler } from "./admin.js";
 import { unitsSpent } from "./quota.js";
 import { simulatorSource, liveSimulatorSource } from "./simulator.js";
@@ -116,7 +119,7 @@ async function handle(comment) {
   if (comment.superchat) {
     const auto = automation("superchat");
     const tier = superchatTier(comment.superchat);
-    if (auto.enabled) {
+    if (auto.enabled && getFeature("superchats")) {
       scRecognized = true;
       const directive = superchatDirective(auto.style, { who: comment.author, text: comment.text, amount: comment.superchat.amount || "", tier });
       if (directive.action === "superchatCard" || directive.action === "addShoutout") directive.params.avatar = comment.avatar || "";
@@ -203,7 +206,7 @@ async function handle(comment) {
 
   // Vote ballots ("!theme:x") are CONSUMED here — they drive a vote round and
   // are never shown as a message or sent to the director.
-  if (config.votes) {
+  if (config.votes && getFeature("votes")) {
     const voted = votes.handle(comment);
     if (voted) {
       console.log(`  ⚑ VOTE  ${comment.author} → ${voted}`);
@@ -215,6 +218,16 @@ async function handle(comment) {
   // Fun Layer: instant emoji reactions + first-time welcome (parallel to the
   // director, no cooldown — meant to feel immediate)
   const fired = config.reactions ? await reactions.handle(comment).catch(() => []) : [];
+
+  // The main director turns a chat comment into a vetted scene directive — the
+  // shoutout cards + chat-driven scene moves. A stage can switch this off so
+  // regular chat doesn't steer the scene (superchats are recognized separately
+  // and stay on their own toggle).
+  if (!getFeature("directives")) {
+    if (fired.length) reportDelay(comment); // a reaction may still have landed
+    await audit({ stage: "skipped", comment, reason: "chat→scene off (stage)" });
+    return;
+  }
 
   const dec = await director.decide(comment);
   // a superchat already got its recognition card — don't double-shoutout
@@ -252,6 +265,11 @@ async function main() {
   console.log(`[ingest] moderation: rate=${config.ratePerMin}/min, blocklist=on, llm=${config.moderationLLM}`);
   await loadAutomations();
   setAutomationPoster(postMutate); // custom automations + previews fire through the normal bus
+  await loadStages();
+  // apply the persisted active stage's interactive features (votes/effects/…)
+  setActiveFeatures(featuresOf(getStage(listStages().active)));
+  const assetCount = await loadAssets();
+  if (assetCount) console.log(`[ingest] asset library: ${assetCount} saved`);
   const banCount = await loadBans();
   if (banCount) console.log(`[ingest] ban list: ${banCount} entr${banCount === 1 ? "y" : "ies"}`);
   setVitalsProvider(() => ({

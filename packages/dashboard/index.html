@@ -231,6 +231,64 @@
   }
   .arow .alabel { color: #cfe8cf; font-size: 14px; }
   .arow .adesc { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  /* ---- STAGES view: its own layout (does NOT inherit the .arow grid) ---- */
+  #stages-list h2 { margin: 14px 0 8px; }
+  #stages-list h2:first-child { margin-top: 4px; }
+  .stages-note { color: var(--dim); font-size: 11px; line-height: 1.5; padding: 0 0 10px; }
+  .stages-note b { color: var(--cyan); font-weight: 400; }
+  .title-ctl {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 12px; background: #0b140b; border: 1px solid #1b2a1b; border-radius: 4px; margin-bottom: 10px;
+  }
+  .title-ctl .lab { color: #cfe8cf; font-size: 12px; }
+  .title-ctl .sub { color: var(--dim); font-size: 10px; margin-top: 3px; }
+  .srow {
+    display: flex; align-items: center; gap: 11px;
+    padding: 11px 12px; border-bottom: 1px solid #131913; border-left: 2px solid transparent;
+  }
+  .srow.is-active { background: #0e1f15; border-left-color: var(--green); }
+  .sthumb {
+    flex: 0 0 auto; width: 92px; height: 52px; border-radius: 3px; overflow: hidden;
+    border: 1px solid #1f2a1f; background: #0a0d0a; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sthumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .sthumb .glyph { font-size: 18px; color: #5a7a5a; }
+  .sthumb .tag { position: absolute; bottom: 2px; right: 3px; font: 8px var(--mono); color: #cfe8cf; background: rgba(0,0,0,.55); padding: 0 3px; border-radius: 2px; text-transform: uppercase; letter-spacing: .04em; }
+  .srow .meta { flex: 1; min-width: 0; }
+  .srow .nm { color: #cfe8cf; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .srow .nm.live { color: var(--green); }
+  .srow .sub { color: var(--dim); font-size: 11px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .srow .btn { flex: 0 0 auto; }
+  .srow .btn.go { color: var(--green); border-color: #234c32; }
+  .stage-add { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .stage-add .line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .stage-add input, .stage-add select {
+    background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
+    font: 11px var(--mono); padding: 7px 8px; border-radius: 3px;
+  }
+  .stage-add .grow { flex: 1; min-width: 120px; }
+  .stage-add label { font-size: 10px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
+  .stage-add .sa-section { font: 10px var(--mono); color: var(--green); text-transform: uppercase; letter-spacing: .06em; margin-top: 8px; padding-top: 7px; border-top: 1px solid #161d16; }
+  .stage-add .sa-section span { color: var(--dim); text-transform: none; letter-spacing: 0; }
+  .stage-add .sa-shows { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .stage-add .sa-shows label { font-size: 11px; color: #cfe8cf; }
+  .stage-add .sa-sub { font-size: 10px; color: var(--dim); padding-left: 2px; }
+  .kbadge { font: 9px var(--mono); padding: 1px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); text-transform: uppercase; }
+  .kbadge.t { color: #b9a25a; border-color: #3a3320; }
+  /* stage kind-filter toolbar */
+  .skinds { display: flex; gap: 5px; flex-wrap: wrap; padding: 0 0 10px; }
+  .skinds button {
+    font: 10px var(--mono); padding: 4px 9px; border: 1px solid var(--line);
+    background: #0c0f0c; color: var(--dim); border-radius: 3px; cursor: pointer; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .skinds button.active { color: var(--green); border-color: #234c32; background: #0e1f15; }
+  /* per-stage feature pills (on a row) + checkboxes (in the form) */
+  .feats { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+  .feat { font: 8px var(--mono); padding: 1px 5px; border-radius: 7px; border: 1px solid #283228; color: #3f5540; text-transform: uppercase; letter-spacing: .03em; }
+  .feat.on { color: #6cc28a; border-color: #245232; background: #0d1c12; }
+  .featbox { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0 2px; }
+  .featbox label { font-size: 10px; color: #cfe8cf; display: flex; align-items: center; gap: 4px; }
   .arow select {
     background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
     font: 11px var(--mono); padding: 5px 7px; border-radius: 3px; width: 100%;
@@ -292,9 +350,20 @@
     margin: 10px; border: 1px solid #4a3c14; background: #161204; border-radius: 4px;
     overflow: hidden; animation: land .4s ease-out;
   }
-  .pending-item .ph { padding: 7px 10px; display: flex; justify-content: space-between; font-size: 11px; color: var(--amber); letter-spacing: .08em; }
+  .pending-item .ph { padding: 7px 10px; display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; color: var(--amber); letter-spacing: .06em; }
+  .pending-item .ph small { color: #8a7a4a; letter-spacing: 0; }
   .pending-item img { display: block; width: 100%; background: #000; border-block: 1px solid #3a2f10; }
   .pending-item .req { padding: 6px 10px; color: var(--dim); font-size: 11px; }
+  /* per-item view ⇄ edit toggle */
+  .pe-toggle { display: inline-flex; flex: 0 0 auto; border: 1px solid #4a3c14; border-radius: 10px; overflow: hidden; cursor: pointer; }
+  .pe-toggle .seg { padding: 2px 9px; font: 700 9px var(--mono); color: #8a7a4a; letter-spacing: .06em; }
+  .pe-toggle .seg.active { background: var(--amber); color: #120a02; }
+  .pending-item .pe-edit { display: none; padding: 8px 10px; }
+  .pending-item.editing .pe-prev { display: none; }
+  .pending-item.editing .pe-edit { display: block; }
+  .pe-edit textarea { width: 100%; height: 150px; background: #0c0f0c; border: 1px solid var(--line); color: var(--txt); font: 11px var(--mono); padding: 7px; border-radius: 3px; resize: vertical; }
+  .pe-edit .pe-repreview { width: 100%; margin-top: 6px; padding: 7px 0; border: 1px solid #234c4c; background: #0c1a1a; color: var(--cyan); border-radius: 3px; cursor: pointer; font: 700 10px var(--mono); letter-spacing: .1em; }
+  .pe-edit .pe-repreview:hover { background: #102a2a; }
   .pending-item .vv { padding: 0 10px 6px; font-size: 11px; }
   .pending-item .row-btns { display: flex; }
   .row-btns button {
@@ -303,17 +372,51 @@
   .approve { background: #0f2a18; color: var(--green); } .approve:hover { background: #16401f; }
   .reject  { background: #2a0f0f; color: var(--red); }   .reject:hover  { background: #401616; }
   #none-pending { color: var(--dim); text-align: center; padding: 26px 0 16px; font-size: 11px; letter-spacing: .14em; }
-  #compose { border-top: 1px solid var(--line); padding: 10px; flex: none; }
+  /* draggable splitter between the list and the compose editor */
+  #rsplit { flex: none; height: 9px; cursor: ns-resize; background: #0c0f0c; border-top: 1px solid var(--line); position: relative; }
+  #rsplit::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 34px; height: 3px; border-top: 1px solid #34452f; border-bottom: 1px solid #34452f; }
+  #rsplit:hover::after, #rsplit.drag::after { border-color: var(--green); }
+  /* the compose panel: explicit height the splitter adjusts; textarea fills it */
+  #compose { padding: 10px; flex: none; height: 210px; min-height: 96px; display: flex; flex-direction: column; }
+  #compose h2 { flex: none; }
   #compose textarea {
-    width: 100%; height: 74px; background: #0c0f0c; border: 1px solid var(--line);
-    color: var(--txt); font: 11px var(--mono); padding: 7px; border-radius: 3px; resize: vertical;
+    width: 100%; flex: 1; min-height: 44px; background: #0c0f0c; border: 1px solid var(--line);
+    color: var(--txt); font: 11px var(--mono); padding: 7px; border-radius: 3px; resize: none;
   }
+  #compose .crow { flex: none; }
   #compose .crow { display: flex; gap: 6px; margin-top: 6px; }
   #compose select, #compose input {
     background: #0c0f0c; border: 1px solid var(--line); color: var(--txt);
     font: 11px var(--mono); padding: 5px 7px; border-radius: 3px;
   }
   #compose input { flex: 1; min-width: 0; }
+  /* right-panel tab switch (review queue ⇄ asset library) */
+  #rtabs { display: flex; }
+  #rtabs button {
+    flex: 1; padding: 9px 0; border: 0; border-bottom: 2px solid transparent; cursor: pointer;
+    background: #0c0f0c; color: var(--dim); font: 700 11px var(--mono); letter-spacing: .1em;
+  }
+  #rtabs button.active { color: var(--green); border-bottom-color: var(--green); background: #0e1f15; }
+  #rtabs .pilln { font-size: 9px; opacity: .7; }
+  /* asset library */
+  #lib-bar { display: flex; gap: 6px; align-items: center; padding: 8px 10px 4px; }
+  #lib-bar button { font: 10px var(--mono); padding: 3px 8px; border: 1px solid var(--line); background: #0c0f0c; color: var(--dim); border-radius: 3px; cursor: pointer; }
+  #lib-bar button.active { color: var(--amber); border-color: #4a3c14; background: #161204; }
+  /* compact: small thumbnail beside the meta, so more fit on the page */
+  .asset { display: flex; gap: 8px; margin: 6px 8px; padding: 6px; border: 1px solid #232a23; background: #0d100d; border-radius: 4px; }
+  .asset img { width: 94px; height: 60px; object-fit: cover; background: #000; border-radius: 3px; flex: 0 0 auto; }
+  .asset .am { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .asset .al { display: flex; align-items: center; gap: 5px; }
+  .asset .alt { flex: 1; min-width: 0; color: #cfe8cf; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .asset .as { color: var(--dim); font-size: 9px; margin-top: 3px; display: flex; align-items: center; gap: 5px; }
+  .asset .stars { display: inline-flex; gap: 2px; cursor: pointer; }
+  .asset .stars b { color: #3a4a3a; font-size: 13px; line-height: 1; font-weight: 400; }
+  .asset .stars b.on { color: var(--amber); }
+  .asset .arow { display: flex; gap: 4px; margin-top: auto; padding-top: 6px; }
+  .asset .arow button { flex: 1; padding: 4px 0; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; font: 700 9px var(--mono); letter-spacing: .05em; background: #0c0f0c; color: var(--dim); }
+  .asset .arow button.reuse { color: var(--green); border-color: #234c32; } .asset .arow button.reuse:hover { background: #0f2a18; }
+  .asset .arow button.tweak:hover { color: var(--cyan); border-color: #234c4c; }
+  .asset .arow button.adel { color: #a06060; } .asset .arow button.adel:hover { background: #2a1010; color: var(--red); border-color: #532222; }
   #toast {
     position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
     background: #162016; border: 1px solid var(--line); color: var(--txt);
@@ -361,6 +464,7 @@
       <button data-music="fadein">FADE IN</button>
     </div>
     <div id="upnext"></div>
+    <div class="stat"><div class="k">STAGE</div><div class="v cyan" id="s-stage">scene</div></div>
     <h2>BAN LIST</h2>
     <div class="scroll" id="bans"></div>
     <form id="ban-form">
@@ -374,7 +478,7 @@
   <section>
     <h2>MODERATION FEED — LIVE</h2>
     <div id="toolbar">
-      <div class="vswitch"><button id="v-feed" class="active">FEED</button><button id="v-users">USERS</button><button id="v-autos">AUTOS</button></div>
+      <div class="vswitch"><button id="v-feed" class="active">FEED</button><button id="v-users">USERS</button><button id="v-autos">AUTOS</button><button id="v-stages">STAGES</button></div>
       <button class="fchip active" data-f="all">ALL</button>
       <button class="fchip" data-f="blocked">BLOCKED</button>
       <button class="fchip" data-f="held">HELD</button>
@@ -392,12 +496,21 @@
       <div id="user-detail" style="display:none"></div>
     </div>
     <div class="scroll" id="autowrap" style="display:none"><div id="autos-list"></div></div>
+    <div class="scroll" id="stageswrap" style="display:none"><div id="stages-list"></div></div>
   </section>
 
-  <!-- right: review queue -->
+  <!-- right: review queue ⇄ asset library -->
   <section>
-    <h2>PENDING REVIEW</h2>
+    <div id="rtabs">
+      <button id="rt-review" class="active">REVIEW QUEUE <span class="pilln" id="rt-review-n"></span></button>
+      <button id="rt-library">★ LIBRARY <span class="pilln" id="rt-library-n"></span></button>
+    </div>
     <div class="scroll" id="pending"><div id="none-pending">— QUEUE EMPTY —</div></div>
+    <div class="scroll" id="library" style="display:none">
+      <div id="lib-bar"><span style="font-size:10px;color:var(--dim);margin-right:auto">aired cards — reuse or tweak</span><button data-lfav="all" class="active">all</button><button data-lfav="fav">★ favorites</button></div>
+      <div id="lib-list"></div>
+    </div>
+    <div id="rsplit" title="drag to resize the compose editor"></div>
     <div id="compose">
       <h2 style="border:0;background:none;padding:0 0 6px">COMPOSE (MOD-AUTHORED)</h2>
       <textarea id="c-html" placeholder="<div style=&quot;…&quot;>raw HTML+CSS — previews off-air into the queue</div>"></textarea>
@@ -433,7 +546,7 @@
     banned_by_mod: ["c-mod", "MOD BAN"], unbanned: ["c-mod", "UNBAN"], kill_switch: ["c-mod", "KILL"],
     error: ["c-blocked", "ERROR"], card_cooldown: ["c-skipped", "cooldn"], approve_failed: ["c-blocked", "AIRFAIL"],
     muted: ["c-held", "MUTED"], muted_by_mod: ["c-mod", "MOD MUTE"], unmuted: ["c-mod", "UNMUTE"],
-    show_control: ["c-mod", "SHOW"], music_control: ["c-mod", "MUSIC"],
+    show_control: ["c-mod", "SHOW"], music_control: ["c-mod", "MUSIC"], stage_source: ["c-mod", "STAGE"],
     superchat: ["c-sc", "★ SUPER"], automation: ["c-mod", "AUTO"], sc_ack: ["c-sc", "CALLED OUT"],
   };
 
@@ -677,6 +790,8 @@
   });
 
   // ---- state poll: health LEDs, bans, pending ----
+  let rtab = "review", libFav = "all"; // right-panel tab + library filter (used by refresh)
+  const pendEdit = new Set();          // pending ids currently in edit-in-place mode
   async function refresh() {
     let st;
     try { st = await api("/admin/state"); } catch { return; }
@@ -687,6 +802,7 @@
     $("#s-song").textContent = st.music?.title ? `${st.music.title} — ${st.music.artist}` : "—";
     $("#s-hold").textContent = st.holdCards ? "HOLD FOR REVIEW" : "AUTO (vision gate)";
     $("#s-hold").className = "v " + (st.holdCards ? "red" : "green");
+    if (st.stage) $("#s-stage").textContent = st.stage.label;
     musicMode = st.music?.mode || "live";
     $("#m-mode").textContent = musicMode === "intro" ? "→ LIVE" : "→ INTRO";
     const nexts = [...(st.queue?.queue || []), ...(st.queue?.rotation || [])].slice(0, 3);
@@ -711,14 +827,36 @@
     }).join("") || `<div id="none-pending">— NO BANS —</div>`;
 
     const pend = st.pending || [];
-    $("#pending").innerHTML = pend.length ? pend.map((p) => `
+    // don't rebuild while a card is being edited in place — it would wipe the
+    // textarea + focus. Edits are saved server-side on RE-PREVIEW; the queue
+    // resumes refreshing once you toggle back to view (or approve/reject).
+    if (pendEdit.size === 0) {
+      $("#pending").innerHTML = pend.length ? pend.map((p) => `
       <div class="pending-item" data-id="${esc(p.id)}">
-        <div class="ph"><span>${esc(p.kind.toUpperCase())} · ${esc(p.who)}</span><span>${new Date(p.ts).toLocaleTimeString()}</span></div>
-        ${p.screenshot ? `<img src="data:image/png;base64,${p.screenshot}" alt="pre-render">` : ""}
-        <div class="req">${esc(p.request || "")}</div>
-        ${p.vision ? `<div class="vv" style="color:${p.vision.safe ? "var(--green)" : "var(--red)"}">vision: ${p.vision.safe ? "safe" : "UNSAFE"} ${esc(p.vision.reason || "")}</div>` : ""}
+        <div class="ph">
+          <span>${esc(p.kind.toUpperCase())} · by <b>${esc(p.who)}</b> · <small>${new Date(p.ts).toLocaleTimeString()}</small></span>
+          <span class="pe-toggle" data-petoggle><b class="seg sv active">view</b><b class="seg se">edit</b></span>
+        </div>
+        <div class="pe-prev">
+          ${p.screenshot ? `<img src="data:image/png;base64,${p.screenshot}" alt="pre-render">` : ""}
+          <div class="req">${esc(p.request || "")}</div>
+          ${p.vision ? `<div class="vv" style="color:${p.vision.safe ? "var(--green)" : "var(--red)"}">vision: ${p.vision.safe ? "safe" : "UNSAFE"} ${esc(p.vision.reason || "")}</div>` : ""}
+        </div>
+        <div class="pe-edit">
+          <textarea class="pe-html" spellcheck="false">${esc(p.html || "")}</textarea>
+          <button class="pe-repreview">RE-PREVIEW (apply edit)</button>
+        </div>
         <div class="row-btns"><button class="approve">▶ AIR IT</button><button class="reject">✕ REJECT</button></div>
       </div>`).join("") : `<div id="none-pending">— QUEUE EMPTY —</div>`;
+      // baseline each editor with the html it currently shows (so an unsaved
+      // edit can be detected + auto-applied when toggling back to view)
+      pend.forEach((p) => { const ta = document.querySelector(`#pending .pending-item[data-id="${p.id}"] .pe-html`); if (ta) ta._rendered = p.html; });
+    }
+
+    // right-panel tab badges + live-refresh the library when it's open
+    $("#rt-review-n").textContent = pend.length ? `(${pend.length})` : "";
+    $("#rt-library-n").textContent = st.assetCount ? `(${st.assetCount})` : "";
+    if (rtab === "library") loadLibrary();
   }
   refresh();
   setInterval(refresh, 5000);
@@ -780,12 +918,139 @@
   // otherwise hold the load event hostage and spin the tab forever)
   if (location.hash === "#live") window.addEventListener("load", () => setTimeout(openLive, 50));
 
-  $("#pending").addEventListener("click", (ev) => {
+  // re-render a card's edited markup off-air and update its thumbnail in place.
+  // ._rendered tracks what's currently shown, so we only re-render real edits.
+  async function reRenderCard(item) {
+    const id = item.dataset.id, ta = item.querySelector(".pe-html");
+    const r = await api(`/admin/pending/${id}/update`, { html: ta.value }).catch(() => ({ ok: false }));
+    if (!r.ok) { toast(`preview failed: ${r.error || "?"}`); return false; }
+    let img = item.querySelector(".pe-prev img");
+    if (!img) { img = document.createElement("img"); item.querySelector(".pe-prev").prepend(img); }
+    if (r.screenshot) img.src = "data:image/png;base64," + r.screenshot;
+    ta._rendered = ta.value;
+    return true;
+  }
+  $("#pending").addEventListener("click", async (ev) => {
     const item = ev.target.closest(".pending-item");
     if (!item) return;
     const id = item.dataset.id;
-    if (ev.target.closest(".approve")) api(`/admin/pending/${id}`, { action: "approve" }).then((r) => { toast(r.ok ? "ON AIR" : `air failed: ${r.error || "?"}`); refresh(); });
-    if (ev.target.closest(".reject")) api(`/admin/pending/${id}`, { action: "reject" }).then(() => { toast("rejected"); refresh(); });
+    // view ⇄ edit toggle (per card)
+    const tog = ev.target.closest(".pe-toggle");
+    if (tog) {
+      const toEdit = ev.target.classList.contains("se") ? true
+        : ev.target.classList.contains("sv") ? false : !item.classList.contains("editing");
+      const ta = item.querySelector(".pe-html");
+      // switching to VIEW with unsaved edits → apply them first so view is current
+      if (!toEdit && ta && ta.value !== ta._rendered) {
+        tog.querySelector(".se").textContent = "applying…";
+        await reRenderCard(item);
+        tog.querySelector(".se").textContent = "edit";
+      }
+      item.classList.toggle("editing", toEdit);
+      tog.querySelector(".sv").classList.toggle("active", !toEdit);
+      tog.querySelector(".se").classList.toggle("active", toEdit);
+      if (toEdit) { pendEdit.add(id); ta.focus(); } else pendEdit.delete(id);
+      return;
+    }
+    // explicit RE-PREVIEW button
+    const rp = ev.target.closest(".pe-repreview");
+    if (rp) {
+      rp.disabled = true; const label = rp.textContent; rp.textContent = "rendering…";
+      const ok = await reRenderCard(item);
+      rp.disabled = false; rp.textContent = label;
+      if (ok) toast("re-rendered — toggle to view, or AIR IT");
+      return;
+    }
+    if (ev.target.closest(".approve")) { pendEdit.delete(id); api(`/admin/pending/${id}`, { action: "approve" }).then((r) => { toast(r.ok ? "ON AIR" : `air failed: ${r.error || "?"}`); refresh(); }); }
+    if (ev.target.closest(".reject")) { pendEdit.delete(id); api(`/admin/pending/${id}`, { action: "reject" }).then(() => { toast("rejected"); refresh(); }); }
+  });
+
+  // ---- ASSET LIBRARY: previously-aired cards, reusable + star-rated ----
+  function setRTab(t) {
+    rtab = t;
+    $("#rt-review").classList.toggle("active", t === "review");
+    $("#rt-library").classList.toggle("active", t === "library");
+    $("#pending").style.display = t === "review" ? "" : "none";
+    $("#library").style.display = t === "library" ? "" : "none";
+    if (t === "library") loadLibrary();
+  }
+  $("#rt-review").addEventListener("click", () => setRTab("review"));
+  $("#rt-library").addEventListener("click", () => setRTab("library"));
+
+  // ---- drag the splitter to resize the compose editor (taller/shorter) ----
+  (() => {
+    const split = $("#rsplit"), compose = $("#compose");
+    if (!split || !compose) return;
+    const saved = Number(localStorage.getItem("hl-compose-h"));
+    if (saved >= 96) compose.style.height = saved + "px";
+    let startY = 0, startH = 0;
+    const move = (e) => {
+      const max = compose.parentElement.clientHeight - 120; // keep room for the list
+      const h = Math.max(96, Math.min(max, startH + (startY - e.clientY))); // drag up → taller
+      compose.style.height = h + "px";
+    };
+    const up = () => {
+      split.classList.remove("drag"); document.body.style.userSelect = "";
+      localStorage.setItem("hl-compose-h", parseInt(compose.style.height) || 210);
+      window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+    };
+    split.addEventListener("mousedown", (e) => {
+      startY = e.clientY; startH = compose.offsetHeight;
+      split.classList.add("drag"); document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+      e.preventDefault();
+    });
+  })();
+  const starRow = (a) => `<span class="stars" data-id="${esc(a.id)}">${[1, 2, 3].map((n) => `<b class="${n <= a.stars ? "on" : ""}" data-n="${n}">★</b>`).join("")}</span>`;
+  async function loadLibrary() {
+    const r = await api("/admin/assets").catch(() => null);
+    if (!r?.ok || rtab !== "library") return;
+    let assets = r.assets || [];
+    if (libFav === "fav") assets = assets.filter((a) => a.stars > 0);
+    $("#lib-list").innerHTML = assets.length ? assets.map((a) => `
+      <div class="asset" data-id="${esc(a.id)}">
+        ${a.screenshot ? `<img src="data:image/png;base64,${a.screenshot}" alt="">` : `<div class="kbadge" style="width:94px;height:60px;display:flex;align-items:center;justify-content:center;flex:0 0 auto">${esc(a.kind)}</div>`}
+        <div class="am">
+          <div class="al"><span class="alt">${esc(a.label || "card")}</span><span class="kbadge">${esc(a.kind)}</span></div>
+          <div class="as">by ${esc(a.who || "?")} · ${a.usedCount || 1}× · ${starRow(a)}</div>
+          <div class="arow">
+            <button class="reuse" data-reuse="${esc(a.id)}" title="re-air this card now">reuse</button>
+            <button class="tweak" data-tweak="${esc(a.id)}" title="load into compose to edit">tweak</button>
+            <button class="adel" data-adel="${esc(a.id)}" title="remove from library">del</button>
+          </div>
+        </div>
+      </div>`).join("") : `<div id="none-pending">— ${libFav === "fav" ? "NO FAVORITES" : "NO SAVED CARDS"} —</div>`;
+  }
+  $("#lib-bar").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-lfav]"); if (!b) return;
+    libFav = b.dataset.lfav;
+    document.querySelectorAll("#lib-bar [data-lfav]").forEach((x) => x.classList.toggle("active", x === b));
+    loadLibrary();
+  });
+  $("#lib-list").addEventListener("click", async (ev) => {
+    const star = ev.target.closest(".stars b");
+    if (star) {
+      const id = star.parentElement.dataset.id;
+      const cur = star.parentElement.querySelectorAll("b.on").length;
+      const n = Number(star.dataset.n);
+      await api("/admin/assets", { id, stars: n === cur ? n - 1 : n }); // click the current top star → clear it
+      return loadLibrary();
+    }
+    const reuse = ev.target.closest("[data-reuse]");
+    if (reuse) { const r = await api("/admin/assets/reuse", { id: reuse.dataset.reuse }); toast(r.ok ? "re-aired ↺" : `failed: ${r.error || "?"}`); return; }
+    const tweak = ev.target.closest("[data-tweak]");
+    if (tweak) {
+      const a = await api(`/admin/asset?id=${encodeURIComponent(tweak.dataset.tweak)}`).catch(() => null);
+      if (!a?.ok) return toast("load failed");
+      // load into the compose editor (it's at the bottom of this panel, visible
+      // on both tabs) — stay on the library, just scroll it into view + focus
+      $("#c-html").value = a.html; $("#c-kind").value = a.kind;
+      $("#c-html").scrollIntoView({ block: "center", behavior: "smooth" }); $("#c-html").focus();
+      toast("loaded into compose below — tweak + PREVIEW → QUEUE");
+      return;
+    }
+    const del = ev.target.closest("[data-adel]");
+    if (del) { if (!confirm("Remove this asset from the library?")) return; await api("/admin/assets", { id: del.dataset.adel, remove: true }); return loadLibrary(); }
   });
 
   // ---- USERS view: directory of everyone who interacted + per-user controls --
@@ -797,22 +1062,25 @@
   };
   function setView(v) {
     view = v;
-    for (const [id, name] of [["#v-feed", "feed"], ["#v-users", "users"], ["#v-autos", "autos"]]) {
+    for (const [id, name] of [["#v-feed", "feed"], ["#v-users", "users"], ["#v-autos", "autos"], ["#v-stages", "stages"]]) {
       $(id).classList.toggle("active", v === name);
     }
     $("#feedwrap").style.display = v === "feed" ? "" : "none";
     $("#userswrap").style.display = v === "users" ? "" : "none";
     $("#autowrap").style.display = v === "autos" ? "" : "none";
+    $("#stageswrap").style.display = v === "stages" ? "" : "none";
     clearInterval(usersTimer);
     if (v === "users") {
       loadUsers();
       usersTimer = setInterval(() => (currentUser ? loadUser(currentUser) : loadUsers()), 5000);
     } else { currentUser = null; }
     if (v === "autos") loadAutos();
+    if (v === "stages") loadStagesView();
   }
   $("#v-feed").addEventListener("click", () => setView("feed"));
   $("#v-users").addEventListener("click", () => setView("users"));
   $("#v-autos").addEventListener("click", () => setView("autos"));
+  $("#v-stages").addEventListener("click", () => setView("stages"));
 
   // ---- AUTOMATIONS view: event → animation bindings (builtin + custom) ----
   async function loadAutos() {
@@ -899,6 +1167,263 @@
     const r = await api("/admin/automations", { key: s.dataset.style, style: s.value });
     toast(r.ok ? `${s.dataset.style} → ${s.value}` : `failed: ${r.error || "?"}`);
     loadAutos();
+  });
+
+  // ---- STAGES view: presets for the main video + live switching ----
+  let lastStages = [], editStageId = null, stageKind = "all", stageFeatKeys = [], stageFeatLabels = {}, stageActiveId = "scene";
+  const FEAT_SHORT = { votes: "vote", superchats: "super", effects: "fx", welcome: "welcome", popups: "emoji", directives: "shoutouts", automations: "auto" };
+  const featPills = (s) => stageFeatKeys.length
+    ? `<div class="feats">${stageFeatKeys.map((k) => `<span class="feat ${s.features && s.features[k] ? "on" : ""}">${FEAT_SHORT[k] || k}</span>`).join("")}</div>` : "";
+  // theme accent colors (mirror packages/streamer/scene/styles.css) → scene
+  // swatches that match what the broadcast actually shows
+  const THEME_COLS = {
+    synthwave:["#ff2e97","#7a2bff","#16d6ff"], sunrise:["#ff8a00","#ff2e63","#ffd166"], mono:["#f0f0f0","#8a8a8a","#fff"],
+    forest:["#19f59c","#0bb37a","#d2ff5e"], aurora:["#3df5c4","#7a5cff","#b6ff5e"], ember:["#ff7b29","#ff3d3d","#ffcf5e"],
+    midnight:["#4f8cff","#7a5cff","#5ef0ff"], vapor:["#ff71ce","#b967ff","#01cdfe"], matrix:["#39ff14","#0aff9d","#c8ff00"],
+    gold:["#ffd35e","#7a4bff","#fff1b8"], crimson:["#ff3b5c","#ff6b3d","#ffb3c1"], neon:["#ff10f0","#10f0ff","#fffb00"],
+    dusk:["#ff7e5f","#9d50bb","#ffd194"], ocean:["#00d4ff","#0077be","#7afcff"], lava:["#ff4500","#ff8c00","#ffd700"],
+    frost:["#a8e6ff","#5eb0ef","#fff"], glitch:["#ff00a0","#00ffe0","#aaff00"], retro:["#ffb000","#ff5e3a","#39ff14"],
+    void:["#7a5cff","#3a2a6a","#b6a8ff"], plasma:["#ff2ed1","#2ee6ff","#b22eff"], noir:["#e8e8e8","#6a6a6a","#ff2e2e"],
+    solar:["#ff7e3d","#ff5e3a","#fff3c4"], holo:["#00fff0","#ff00e5","#a0fff0"],
+  };
+  const sceneSwatch = (theme) => {
+    const c = THEME_COLS[theme] || THEME_COLS.synthwave;
+    return `background: radial-gradient(120% 120% at 30% 18%, ${c[0]}55 0%, ${c[1]}44 45%, #05030f 100%), #07060f`;
+  };
+  const ytThumb = (id) => `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+  // a small visual preview per stage: the real source where one exists, a
+  // theme-accurate swatch for scenes, a glyph for direct video
+  // a glyph sits BEHIND the img; if the image fails to load the img hides and
+  // the glyph shows through (so a thumbnail never renders as a broken-image box)
+  const stageThumb = (s) => {
+    if (s.kind === "youtube" && s.videoId) {
+      const fb = `https://i.ytimg.com/vi/${encodeURIComponent(s.videoId)}/hqdefault.jpg`;
+      return `<div class="sthumb"><span class="glyph">►</span><img src="${ytThumb(s.videoId)}" alt="" onerror="if(!this.dataset.f){this.dataset.f=1;this.src='${fb}'}else{this.style.display='none'}"><span class="tag">yt</span></div>`;
+    }
+    if (s.kind === "image" && s.url)
+      return `<div class="sthumb"><span class="glyph">▦</span><img src="${esc(s.url)}" alt="" onerror="this.style.display='none'"><span class="tag">img</span></div>`;
+    if (s.kind === "scene")
+      return `<div class="sthumb" style="${sceneSwatch(s.theme)}"><span class="glyph">✦</span><span class="tag">${esc(s.theme || "scene")}</span></div>`;
+    return `<div class="sthumb"><span class="glyph">►</span><span class="tag">vid</span></div>`; // direct video / HLS
+  };
+  const stageSummary = (s) =>
+    s.kind === "scene" ? (s.theme ? `native scene · ${s.theme}` : "native generative scene")
+    : s.kind === "youtube" ? `YouTube ${esc(s.videoId)}${s.muted ? " · muted" : " · 🔊"}`
+    : s.kind === "video" ? `video${s.muted ? " · muted" : " · 🔊"} · ${esc((s.url || "").replace(/^https?:\/\//, "").slice(0, 34))}`
+    : s.kind === "image" ? `image · ${esc((s.url || "").replace(/^https?:\/\//, "").slice(0, 34))}`
+    : esc(s.kind);
+  const stageRow = (s, active) => {
+    const live = s.id === active;
+    return `
+    <div class="srow ${live ? "is-active" : ""}" data-id="${esc(s.id)}">
+      ${stageThumb(s)}
+      <div class="meta">
+        <div class="nm ${live ? "live" : ""}">${live ? "▶ " : ""}${esc(s.label)}
+          <span class="kbadge">${esc(s.kind)}</span>
+          ${s.titleAnim === "hide" ? `<span class="kbadge t">titles off</span>` : s.titleAnim ? `<span class="kbadge t">titles ${esc(TITLE_LABELS[s.titleAnim] || s.titleAnim)}</span>` : ""}
+          ${s.headline || s.kicker || s.subhead ? `<span class="kbadge t">custom titles</span>` : ""}
+          ${s.showTicker === false ? `<span class="kbadge t">ticker off</span>` : s.ticker && s.ticker.length ? `<span class="kbadge t">ticker ${s.ticker.length}</span>` : ""}
+          ${s.showVibe === false ? `<span class="kbadge t">vibe off</span>` : ""}
+          ${s.customized ? `<span class="kbadge" style="color:#7a9">edited</span>` : ""}
+        </div>
+        <div class="sub">${stageSummary(s)}</div>
+        ${featPills(s)}
+      </div>
+      <button class="btn go" data-apply="${esc(s.id)}" title="${live ? "re-apply this stage to the live broadcast" : "switch the LIVE stage to this now"}">${live ? "↻ RE-APPLY" : "GO LIVE"}</button>
+      <button class="btn" data-spreview="${esc(s.id)}" title="preview off-air in the twin (no broadcast risk)">▶ preview</button>
+      <button class="btn" data-sedit="${esc(s.id)}" title="edit this stage">edit</button>
+      ${s.builtin
+        ? (s.customized ? `<button class="btn" data-sreset="${esc(s.id)}" title="reset this builtin to its default">reset</button>` : "")
+        : `<button class="btn danger" data-sdel="${esc(s.id)}" title="delete this stage">del</button>`}
+    </div>`;
+  };
+  const TITLE_LABELS = { slideL: "fly in ← left", slideR: "fly in → right", slideU: "fly up", slideD: "fly down", fade: "fade in", none: "no anim", hide: "hidden (clean stage)" };
+  const titleOpts = (anims, sel, withDefault) =>
+    (withDefault ? `<option value="default"${!sel ? " selected" : ""}>default (global)</option>` : "") +
+    anims.map((a) => `<option value="${esc(a)}"${a === sel ? " selected" : ""}>${esc(TITLE_LABELS[a] || a)}</option>`).join("");
+  async function loadStagesView() {
+    const r = await api("/admin/stages").catch(() => null);
+    if (!r?.ok || view !== "stages") return;
+    lastStages = [...r.builtins, ...r.custom];
+    stageActiveId = r.active;
+    stageFeatKeys = r.featureKeys || [];
+    stageFeatLabels = r.featureLabels || {};
+    editStageId = null; // a fresh render clears any in-progress edit
+    const kinds = ["all", ...(r.kinds || [])];
+    const counts = Object.fromEntries(kinds.map((k) => [k, k === "all" ? lastStages.length : lastStages.filter((s) => s.kind === k).length]));
+    const kindBar = `<div class="skinds">${kinds.map((k) => `<button data-skind="${esc(k)}" class="${stageKind === k ? "active" : ""}">${esc(k)} <span style="opacity:.55">${counts[k]}</span></button>`).join("")}</div>`;
+    const shown = lastStages.filter((s) => stageKind === "all" || s.kind === stageKind);
+    const rows = shown.length ? shown.map((s) => stageRow(s, r.active)).join("") : `<div class="stages-note" style="padding:14px 12px">no ${esc(stageKind)} stages yet</div>`;
+    $("#stages-list").innerHTML = `
+      <h2>STAGES — WHAT'S ON THE MAIN VIDEO</h2>
+      <div class="stages-note"><b>GO LIVE</b> switches the broadcast stage instantly (works mid-show); <b>▶ preview</b> shows it off-air first. YouTube/video stages need <b>AUDIO_MODE=source</b> for sound.</div>
+      <div class="title-ctl">
+        <div><div class="lab">Overlay titles — global default</div><div class="sub">how the kicker / headline / subhead fly in; each stage can override this</div></div>
+        <select id="title-default">${titleOpts(r.titleAnims, r.titleDefault, false)}</select>
+      </div>
+      ${kindBar}
+      ${rows}
+      <h2 id="sa-heading">ADD A STAGE</h2>
+      <div class="stage-add">
+        <!-- source / identity -->
+        <div class="line">
+          <input id="sa-label" class="grow" placeholder="stage name…">
+          <select id="sa-kind"><option value="youtube">youtube</option><option value="video">video / HLS</option><option value="image">image</option><option value="scene">scene</option></select>
+        </div>
+        <div class="line">
+          <input id="sa-source" class="grow" placeholder="YouTube URL or id, or a media URL">
+        </div>
+        <div class="line">
+          <input id="sa-theme" placeholder="theme (optional)" style="width:150px">
+          <label><input type="checkbox" id="sa-muted" style="width:auto"> mute audio</label>
+        </div>
+
+        <!-- OVERLAY: everything shown ON TOP of the stage -->
+        <div class="sa-section">overlay <span>— what's shown on top of the stage</span></div>
+        <div class="sa-shows">
+          <label><input type="checkbox" id="sa-show-titles" checked style="width:auto"> show titles</label>
+          <label style="color:var(--dim)">anim <select id="sa-titles">${titleOpts(r.titleAnims.filter((a) => a !== "hide"), "", true)}</select></label>
+          <label><input type="checkbox" id="sa-show-ticker" checked style="width:auto"> show ticker</label>
+          <label title="the mood 'vibe' chip, e.g. THE ROOM FEELS CLOSE"><input type="checkbox" id="sa-show-vibe" checked style="width:auto"> show vibe chip</label>
+        </div>
+        <div class="sa-sub">title text (blank = keep the scene default)</div>
+        <div class="line">
+          <input id="sa-kicker" placeholder="kicker" style="width:150px">
+          <input id="sa-headline" class="grow" placeholder="headline text">
+        </div>
+        <div class="line">
+          <input id="sa-subhead" class="grow" placeholder="subhead text">
+        </div>
+        <div class="sa-sub">ticker messages (one per line, up to 8 — blank = keep the default)</div>
+        <div class="line">
+          <textarea id="sa-ticker" class="grow" placeholder="ticker messages…" style="height:48px;resize:vertical;background:#0c0f0c;border:1px solid var(--line);color:var(--txt);font:11px var(--mono);padding:6px 8px;border-radius:3px"></textarea>
+        </div>
+
+        <!-- FEATURES: chat-driven behaviours -->
+        <div class="sa-section">features <span>— chat-driven behaviours on this stage</span></div>
+        <div class="featbox" id="sa-feats">
+          ${stageFeatKeys.map((k) => `<label><input type="checkbox" data-feat="${esc(k)}" checked style="width:auto"> ${esc(stageFeatLabels[k] || k)}</label>`).join("")}
+        </div>
+
+        <div class="line" style="margin-top:6px">
+          <button class="btn" id="sa-cancel" style="margin-left:auto;display:none">cancel</button>
+          <button class="btn go" id="sa-add">+ ADD STAGE</button>
+        </div>
+      </div>`;
+    syncAddForm();
+  }
+  const readFeatBoxes = () => Object.fromEntries(stageFeatKeys.map((k) => [k, $(`#sa-feats [data-feat="${k}"]`)?.checked !== false]));
+  const setFeatBoxes = (f) => stageFeatKeys.forEach((k) => { const el = $(`#sa-feats [data-feat="${k}"]`); if (el) el.checked = !f || f[k] !== false; });
+  // load a stage's values into the add form and switch it to edit/save mode
+  function beginEditStage(s) {
+    editStageId = s.id;
+    $("#sa-label").value = s.label || "";
+    $("#sa-kind").value = s.kind; syncAddForm();
+    $("#sa-source").value = s.kind === "youtube" ? (s.videoId || "") : (s.url || "");
+    $("#sa-theme").value = s.theme || "";
+    $("#sa-titles").value = s.titleAnim || "default";
+    $("#sa-muted").checked = !!s.muted;
+    setFeatBoxes(s.features);
+    const titlesOff = s.titleAnim === "hide";
+    $("#sa-show-titles").checked = !titlesOff;
+    $("#sa-titles").value = (s.titleAnim && s.titleAnim !== "hide") ? s.titleAnim : "default";
+    $("#sa-kicker").value = s.kicker || "";
+    $("#sa-headline").value = s.headline || "";
+    $("#sa-subhead").value = s.subhead || "";
+    $("#sa-ticker").value = (s.ticker || []).join("\n");
+    $("#sa-show-ticker").checked = s.showTicker !== false;
+    $("#sa-show-vibe").checked = s.showVibe !== false;
+    syncAddForm();
+    $("#sa-heading").textContent = `EDIT STAGE — ${s.label}`;
+    $("#sa-add").textContent = "✓ SAVE";
+    $("#sa-cancel").style.display = "";
+    $("#sa-label").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  // hide the source field when kind=scene (scenes have no external source)
+  function syncAddForm() {
+    const kindSel = $("#sa-kind"); if (!kindSel) return;
+    const isScene = kindSel.value === "scene";
+    const src = $("#sa-source");
+    if (src) { src.style.display = isScene ? "none" : ""; src.parentElement.style.display = isScene ? "none" : ""; }
+    const mute = $("#sa-muted"); if (mute) mute.parentElement.style.display = (kindSel.value === "youtube" || kindSel.value === "video") ? "" : "none";
+    // the animation picker + title text only matter when titles are shown
+    const showT = $("#sa-show-titles"), anim = $("#sa-titles");
+    const titlesOn = showT ? showT.checked : true;
+    if (anim) { anim.disabled = !titlesOn; anim.parentElement.style.opacity = titlesOn ? "1" : ".4"; }
+    for (const id of ["sa-kicker", "sa-headline", "sa-subhead"]) {
+      const el = $("#" + id); if (el) { el.disabled = !titlesOn; el.style.opacity = titlesOn ? "1" : ".4"; }
+    }
+    // the ticker textarea only matters when the ticker is shown
+    const showTk = $("#sa-show-ticker"), tk = $("#sa-ticker");
+    if (showTk && tk) { tk.disabled = !showTk.checked; tk.style.opacity = showTk.checked ? "1" : ".4"; }
+  }
+  $("#stages-list").addEventListener("click", async (ev) => {
+    const kb = ev.target.closest("[data-skind]");
+    if (kb) { stageKind = kb.dataset.skind; return loadStagesView(); }
+    const ap = ev.target.closest("[data-apply]");
+    if (ap) {
+      ap.textContent = "…";
+      const r = await api("/admin/stages/apply", { id: ap.dataset.apply });
+      toast(r.ok ? `stage → live (${r.fired})` : `failed: ${r.error || "?"}`);
+      refresh(); return loadStagesView();
+    }
+    const pv = ev.target.closest("[data-spreview]");
+    if (pv) {
+      openPreviewTwin(); // boots + shows the off-air twin
+      const r = await api("/admin/stages/apply", { id: pv.dataset.spreview, preview: true });
+      toast(r.ok ? "previewing stage (off-air)" : `preview failed: ${r.error || "?"}`);
+      if (!r.ok) closeLive();
+      return;
+    }
+    const ed = ev.target.closest("[data-sedit]");
+    if (ed) {
+      const s = lastStages.find((x) => x.id === ed.dataset.sedit);
+      if (s) beginEditStage(s);
+      return;
+    }
+    const del = ev.target.closest("[data-sdel]");
+    if (del) {
+      if (!confirm("Delete this stage?")) return;
+      await api("/admin/stages/custom", { id: del.dataset.sdel, remove: true });
+      toast("deleted"); return loadStagesView();
+    }
+    const rst = ev.target.closest("[data-sreset]");
+    if (rst) {
+      if (!confirm("Reset this builtin stage to its default?")) return;
+      await api("/admin/stages/custom", { id: rst.dataset.sreset, remove: true });
+      toast("reset to default"); return loadStagesView();
+    }
+    if (ev.target.closest("#sa-cancel")) { return loadStagesView(); } // discard edit
+    if (ev.target.closest("#sa-add")) {
+      const kind = $("#sa-kind").value;
+      const body = {
+        label: $("#sa-label").value.trim(), kind, source: $("#sa-source").value.trim(),
+        theme: $("#sa-theme").value.trim(),
+        titles: $("#sa-show-titles").checked ? $("#sa-titles").value : "hide", // unchecked → titles off
+        muted: $("#sa-muted").checked,
+        features: readFeatBoxes(),
+        kicker: $("#sa-kicker").value.trim(), headline: $("#sa-headline").value.trim(),
+        subhead: $("#sa-subhead").value.trim(),
+        ticker: $("#sa-ticker").value, showTicker: $("#sa-show-ticker").checked,
+        showVibe: $("#sa-show-vibe").checked,
+      };
+      if (editStageId) body.id = editStageId; // edit instead of add
+      const r = await api("/admin/stages/custom", body);
+      // if we just edited the stage that's LIVE, re-apply it so the broadcast
+      // reflects the change immediately (otherwise the edit is saved but the
+      // live stage doesn't update — and its button can't be "GO LIVE"-d)
+      const wasActive = editStageId && editStageId === stageActiveId;
+      if (r.ok && wasActive) { await api("/admin/stages/apply", { id: editStageId }); }
+      toast(r.ok ? (editStageId ? (wasActive ? "saved + re-applied live" : "stage saved") : `added: ${r.stage.label}`) : `failed: ${r.error || "?"}`);
+      if (r.ok) { refresh(); loadStagesView(); }
+    }
+  });
+  $("#stages-list").addEventListener("change", async (ev) => {
+    if (["sa-kind", "sa-show-titles", "sa-show-ticker"].includes(ev.target.id)) return syncAddForm();
+    if (ev.target.id === "title-default") {
+      const r = await api("/admin/stages/titles", { default: ev.target.value });
+      toast(r.ok ? `title default → ${r.titleDefault}` : `failed: ${r.error || "?"}`);
+    }
   });
 
   // the toolbar filter applies here too: chips → users with that kind of

@@ -53,10 +53,14 @@
     if (el) el.dataset.show = on ? "true" : "false";
   }
 
-  // the subtle "current vibe" chip (Mood Engine descriptor), fade-swapped
+  // the subtle "current vibe" chip (Mood Engine descriptor), fade-swapped.
+  // vibeHidden lets a stage switch the chip off — the mood engine keeps running
+  // but showVibe respects the hide, so it won't pop back in.
+  let vibeHidden = false;
   function showVibe(text) {
     const el = $("#vibe");
     if (!el) return;
+    if (vibeHidden) { el.dataset.show = "false"; return; }
     const t = clean(text, 48);
     if (!t) { el.dataset.show = "false"; return; }
     el.dataset.show = "true";
@@ -837,6 +841,13 @@
   // showcase transition) is queued and applied when the current one completes —
   // dropping it would mean "X wins!" followed by… nothing
   let pendingTheme = null;
+  // swap ONLY the theme-* class — never `body.className = ...`, which would also
+  // wipe state classes like `stage-sourced` (and silently re-show the opaque
+  // background over a video stage source). Preserves everything non-theme.
+  function setBodyTheme(theme) {
+    [...document.body.classList].forEach((c) => { if (c.startsWith("theme-")) document.body.classList.remove(c); });
+    document.body.classList.add("theme-" + theme);
+  }
   function crossfade(theme, duration) {
     if (!THEMES.includes(theme)) theme = currentTheme;
     if (theme === currentTheme && !transitioning) return { theme: currentTheme };
@@ -850,7 +861,7 @@
     if (!gsap) {
       // no-anim fallback
       outgoing.classList.add("is-hidden");
-      document.body.className = "theme-" + theme;
+      setBodyTheme(theme);
       active = 1 - active; currentTheme = theme; retint();
       return { theme };
     }
@@ -872,7 +883,7 @@
       onComplete() {
         outgoing.classList.add("is-hidden");
         // class now supplies the final colors; drop the inline tween overrides
-        document.body.className = "theme-" + theme;
+        setBodyTheme(theme);
         ["--c1", "--c2", "--c3"].forEach((v) => document.body.style.removeProperty(v));
         active = 1 - active;
         currentTheme = theme;
@@ -950,6 +961,41 @@
     f.style.cssText = `width:${w}px;height:${h}px;border:0;display:block;background:transparent;`;
     f.srcdoc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;width:${w}px;height:${h}px;overflow:hidden;background:transparent}</style></head><body>${html}</body></html>`;
     return f;
+  }
+
+  // ---- stage source (overlay mode) state ----------------------------------
+  // The YouTube IFrame Player API is the only reliable way to autoplay WITH
+  // sound (a bare embed auto-mutes). It's lazy-loaded the first time a YouTube
+  // stage is set, so the default scene never pulls anything from youtube.com.
+  let ytPlayer = null, ytApiPromise = null, stageGen = 0, hlsInst = null, hlsLibPromise = null;
+  // hls.js is vendored but lazy-loaded — only a live/HLS stage source pulls it,
+  // so the default scene stays lean. Chromium can't play .m3u8 in a <video>
+  // natively; hls.js feeds it via MSE (audio + video).
+  function ensureHls() {
+    if (window.Hls) return Promise.resolve();
+    if (hlsLibPromise) return hlsLibPromise;
+    hlsLibPromise = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "/vendor/hls.min.js";
+      s.onload = () => resolve();
+      s.onerror = () => { hlsLibPromise = null; reject(new Error("hls.js load failed")); };
+      document.head.appendChild(s);
+    });
+    return hlsLibPromise;
+  }
+  const isHls = (u) => /\.m3u8(\?|$)|\/manifest\/|\/hls[_/]/i.test(String(u));
+  function ensureYTApi() {
+    if (window.YT && window.YT.Player) return Promise.resolve();
+    if (ytApiPromise) return ytApiPromise;
+    ytApiPromise = new Promise((resolve, reject) => {
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { try { prev && prev(); } catch {} resolve(); };
+      const s = document.createElement("script");
+      s.src = "https://www.youtube.com/iframe_api";
+      s.onerror = () => { ytApiPromise = null; reject(new Error("yt api load failed")); };
+      document.head.appendChild(s);
+    });
+    return ytApiPromise;
   }
 
   // ---- the action table ---------------------------------------------------
@@ -1320,10 +1366,38 @@
 
     // rewrite the scrolling ticker messages (sanitised, capped) — seamless
     setTicker(p = {}) {
+      const host = $("#ticker-cards");
+      // hide the ticker entirely (a stage can switch it off)
+      if (p.show === false) {
+        if (tickTimer) { if (tickTimer.kill) tickTimer.kill(); else clearTimeout(tickTimer); tickTimer = null; }
+        if (host) {
+          if (gsap) gsap.to(host, { opacity: 0, duration: 0.4, ease: "power2.in", onComplete: () => { host.textContent = ""; } });
+          else { host.textContent = ""; host.style.opacity = "0"; }
+        }
+        return { ok: true, show: false };
+      }
+      // make sure it's visible again (after a prior hide)
+      if (host) { if (gsap) gsap.set(host, { opacity: 1 }); else host.style.opacity = ""; }
       const items = (Array.isArray(p.items) ? p.items : [])
         .map((s) => clean(s, 60)).filter(Boolean).slice(0, 8);
-      if (!items.length) return { ok: false };
-      return startTickerCards(items);
+      // new items → rotate them; none → just re-show the current set
+      return startTickerCards(items.length ? items : undefined);
+    },
+
+    // show/hide the "current vibe" chip (the Mood Engine descriptor). A stage
+    // can switch it off; the mood engine keeps running but the chip stays hidden.
+    setVibe(p = {}) {
+      const el = $("#vibe");
+      if (!el) return { ok: false };
+      vibeHidden = p.show === false;
+      if (vibeHidden) {
+        if (gsap) gsap.to(el, { opacity: 0, duration: 0.3, ease: "power2.in", onComplete: () => { el.dataset.show = "false"; } });
+        else el.dataset.show = "false";
+      } else {
+        if (gsap) gsap.set(el, { opacity: 1 });
+        el.dataset.show = el.textContent.trim() ? "true" : "false"; // re-show if there's a descriptor
+      }
+      return { ok: true, show: !vibeHidden };
     },
 
     // toggle a named effect on/off — fades in/out (no hard cut)
@@ -1674,6 +1748,145 @@
 
     // show/hide the CPU-rendering warning banner (operator can dismiss it)
     renderWarning(p = {}) { showWarning(p.show !== false); return { show: p.show !== false }; },
+
+    // ---- Titles: fly the overlay title block (#content) in / out ----------
+    // The kicker/headline/subhead that ride ON TOP of the stage. Stages can
+    // bring them in with a chosen animation, or hide them for a clean stage.
+    // Animates the #content CONTAINER as a group, so the headline's own
+    // perpetual float (a child tween) keeps running underneath.
+    setTitles(p = {}) {
+      const content = $("#content");
+      if (!content) return { ok: false, error: "no content layer" };
+      const show = p.show !== false;
+      const ANIMS = ["slideL", "slideR", "slideU", "slideD", "fade", "none"];
+      const anim = ANIMS.includes(p.anim) ? p.anim : "slideL";
+      const dur = clampNum(p.duration, 0.2, 3, 0.8);
+      const off = { slideL: { x: -80, y: 0 }, slideR: { x: 80, y: 0 }, slideU: { x: 0, y: 56 }, slideD: { x: 0, y: -56 }, fade: { x: 0, y: 0 }, none: { x: 0, y: 0 } }[anim];
+      if (!gsap || anim === "none") {
+        gsap && gsap.killTweensOf(content);
+        content.style.opacity = show ? "1" : "0";
+        content.style.transform = "";
+        return { ok: true, show, anim: "none" };
+      }
+      gsap.killTweensOf(content);
+      if (show) {
+        content.style.opacity = "";
+        gsap.fromTo(content, { opacity: 0, x: off.x, y: off.y },
+          { opacity: 1, x: 0, y: 0, duration: dur, ease: "power3.out", clearProps: "transform,opacity" });
+      } else {
+        gsap.to(content, { opacity: 0, x: off.x, y: off.y, duration: dur, ease: "power2.in" });
+      }
+      return { ok: true, show, anim };
+    },
+
+    // ---- Overlay mode: put an external source UNDER the scene -------------
+    // OPERATOR action (not viewer-reachable): pick what's on the main stage —
+    // a YouTube video, a direct video/image URL, or none (back to the themed
+    // background). The HyperLive scene becomes a transparent overlay on top.
+    // Elements are built with DOM APIs + a strict id/URL whitelist, never
+    // innerHTML, so even this operator door can't smuggle markup into the page.
+    setStageSource(p = {}) {
+      const host = $("#stage-source");
+      if (!host) return { ok: false, error: "no stage-source layer" };
+      const kind = String(p.kind || "none").toLowerCase();
+      const scrim = host.querySelector(".src-scrim");
+      const gen = ++stageGen; // invalidates any in-flight async source from a prior call
+      // tear down any previous source (stops a playing iframe/video/HLS cleanly)
+      if (ytPlayer) { try { ytPlayer.destroy(); } catch {} ytPlayer = null; }
+      if (hlsInst) { try { hlsInst.destroy(); } catch {} hlsInst = null; }
+      for (const el of [...host.children]) { if (el !== scrim) el.remove(); }
+
+      if (kind === "none" || kind === "off" || kind === "clear") {
+        document.body.classList.remove("stage-sourced");
+        return { ok: true, kind: "none" };
+      }
+
+      const httpUrl = (u) => { try { const x = new URL(String(u)); return (x.protocol === "https:" || x.protocol === "http:") ? x.href : null; } catch { return null; } };
+
+      if (kind === "youtube" || kind === "yt") {
+        // accept a bare 11-char id or any youtube URL we can pull the id from
+        let id = String(p.id || "");
+        if (!/^[A-Za-z0-9_-]{11}$/.test(id)) {
+          const m = String(p.url || p.id || "").match(/(?:v=|youtu\.be\/|embed\/|live\/|shorts\/)([A-Za-z0-9_-]{11})/);
+          id = m ? m[1] : "";
+        }
+        if (!/^[A-Za-z0-9_-]{11}$/.test(id)) return { ok: false, error: "youtube id/url required" };
+        const wantSound = p.muted === false;
+        // the API replaces this mount node with the player iframe (on nocookie)
+        const mount = document.createElement("div");
+        host.appendChild(mount);
+        document.body.classList.add("stage-sourced");
+        const unmute = (player) => { try { player.unMute(); player.setVolume(100); } catch {} };
+        ensureYTApi().then(() => {
+          if (gen !== stageGen) return; // a newer setStageSource superseded us
+          ytPlayer = new window.YT.Player(mount, {
+            width: "100%", height: "100%", videoId: id,
+            host: "https://www.youtube-nocookie.com",
+            playerVars: {
+              autoplay: 1, mute: wantSound ? 0 : 1, controls: 0, modestbranding: 1,
+              rel: 0, iv_load_policy: 3, disablekb: 1, fs: 0, playsinline: 1,
+              loop: 1, playlist: id,
+            },
+            events: {
+              onReady: (e) => { if (wantSound) unmute(e.target); try { e.target.playVideo(); } catch {} },
+              // re-assert unmute when it actually starts PLAYING (state 1) — some
+              // players honor unMute only once playback has begun
+              onStateChange: (e) => { if (wantSound && e.data === 1 && e.target.isMuted && e.target.isMuted()) unmute(e.target); },
+            },
+          });
+        }).catch(() => {
+          if (gen !== stageGen) return;
+          // no network for the API → fall back to a plain muted embed (silent)
+          const f = document.createElement("iframe");
+          f.setAttribute("allow", "autoplay; encrypted-media");
+          f.setAttribute("frameborder", "0");
+          const qs = new URLSearchParams({ autoplay: "1", mute: "1", controls: "0", rel: "0", loop: "1", playlist: id, playsinline: "1" });
+          f.src = `https://www.youtube-nocookie.com/embed/${id}?${qs.toString()}`;
+          host.appendChild(f);
+        });
+        return { ok: true, kind: "youtube", id, muted: !wantSound };
+      }
+
+      if (kind === "video") {
+        const url = httpUrl(p.url);
+        if (!url) return { ok: false, error: "http(s) video url required" };
+        const v = document.createElement("video");
+        v.autoplay = true; v.loop = p.loop !== false; v.playsInline = true;
+        v.muted = p.muted !== false; // muted by default → reliable autoplay
+        const tryPlay = () => { v.play?.().catch(() => {}); };
+        v.addEventListener("canplay", tryPlay, { once: true });
+        host.appendChild(v);
+        document.body.classList.add("stage-sourced");
+        if (isHls(url)) {
+          // a live stream / HLS manifest — Chromium needs hls.js (via MSE)
+          ensureHls().then(() => {
+            if (gen !== stageGen) return;
+            if (window.Hls && window.Hls.isSupported()) {
+              hlsInst = new window.Hls({ lowLatencyMode: true });
+              hlsInst.loadSource(url);
+              hlsInst.attachMedia(v);
+              hlsInst.on(window.Hls.Events.MANIFEST_PARSED, tryPlay);
+            } else { v.src = url; tryPlay(); } // (Safari-style native HLS fallback)
+          }).catch(() => { if (gen === stageGen) { v.src = url; tryPlay(); } });
+        } else {
+          v.src = url; tryPlay();
+        }
+        return { ok: true, kind: "video", url, muted: v.muted, hls: isHls(url) };
+      }
+
+      if (kind === "image") {
+        const url = httpUrl(p.url);
+        if (!url) return { ok: false, error: "http(s) image url required" };
+        const d = document.createElement("div");
+        d.className = "src-img";
+        d.style.backgroundImage = `url("${encodeURI(url)}")`;
+        host.appendChild(d);
+        document.body.classList.add("stage-sourced");
+        return { ok: true, kind: "image", url };
+      }
+
+      return { ok: false, error: "kind must be none|youtube|video|image" };
+    },
   };
 
   window.SceneAPI = SceneAPI;
