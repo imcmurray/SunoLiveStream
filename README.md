@@ -69,6 +69,40 @@ scripts/live.sh status     # health + now-playing + show phase
 Live-ops: `scripts/live.sh {intro|onair [secs]|resume|tech|brb|outro|now|queue [url]|next}`
 — full reference in **[`docs/live-ops.md`](docs/live-ops.md)**.
 
+## Overlay mode (operator-only)
+
+[![Overlay mode — a YouTube video plays as the stage while the HyperLive scene rides on top](docs/overlay-mode.png)](docs/overlay-mode.png)
+
+<sub>A YouTube video as the stage, with the live HyperLive scene (kicker,
+gradient headline, rotating card, legibility scrim) composited on top — all in
+one capture, **with the source's audio** (`AUDIO_MODE=source` captures the
+browser's sound; YouTube is resolved via `yt-dlp` and played in a `<video>`, so
+both live streams and VODs play with synced audio). It's operator-only (never
+viewer-reachable), and the source is chosen from the dashboard's **STAGE
+SOURCE** control. Design notes:
+[`docs/platform-directions.md` §6](docs/platform-directions.md).</sub>
+
+The full **AI layer is verified live** (local broadcast test) — see [Enabling the AI layer](#enabling-the-ai-layer).
+
+## Enabling the AI layer
+
+Everything Claude-powered is **off by default** and gated on `ANTHROPIC_API_KEY`
+(in `.env`, gitignored). Each piece is an independent flag — turn on what you
+want. Without a key the system runs entirely on the deterministic rules path.
+
+| Flag (env) | What it does | Model |
+|---|---|---|
+| `DIRECTOR=llm` | Claude composes the scene directive from each chat message (vs `parseIntent` rules); output re-validated against the same allowlist | Haiku (cheap) |
+| `MODERATION_LLM=anthropic` | a safety classifier runs **after** the regex/rate layer — catches subtle harassment/scams plain rules miss (verified: blocks "nobody wants you here, just disappear" and a wallet-doubling scam) | Haiku |
+| `MOOD_LLM=on` | the Mood Conductor's "vibe" descriptors are Claude-authored (more evocative than the rules pool) | Haiku |
+| `CARDS=on` *(auto-on with a key)* | **Tier 2**: `!card <desc>` → Claude authors a 360×250 HTML/CSS card → off-air render → **vision safety gate** → sandboxed on-stage slot. Set `HOLD_CARDS=on` to park cards in the mod queue for approval instead of airing on a vision pass | Haiku authoring + Haiku vision |
+
+The vision gate (`packages/streamer/src/vision.js`) also needs the key **in the
+streamer** (it renders + judges the screenshot there) — pass `ANTHROPIC_API_KEY`
+to both processes. Every path **fails safe**: a missing key / API error / weird
+output falls back to rules (director, mood) or rejects (moderation, vision).
+Bump `ANTHROPIC_MODEL` to a stronger model for higher-quality cards/directives.
+
 ## Mod console
 
 Everything above is also drivable from a browser: the ingest serves a
